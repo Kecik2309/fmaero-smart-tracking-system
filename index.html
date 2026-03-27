@@ -3,27 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script>
-        (function () {
-            const authRaw = localStorage.getItem("fmaero_auth");
-            const allowedRoles = new Set(["storekeeper", "manager", "siteSupervisor"]);
+    <script type="module">
+        import { guardPage } from "./page-auth.js";
 
-            if (!authRaw) {
-                window.location.replace("login.html");
-                return;
-            }
-
-            try {
-                const session = JSON.parse(authRaw);
-                if (!session || !session.email || !session.role || !allowedRoles.has(session.role)) {
-                    localStorage.removeItem("fmaero_auth");
-                    window.location.replace("login.html");
-                }
-            } catch {
-                localStorage.removeItem("fmaero_auth");
-                window.location.replace("login.html");
-            }
-        }());
+        guardPage(["storekeeper", "manager", "siteSupervisor"]);
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
@@ -179,7 +162,7 @@
                         </div>
                         <p id="rfidLastResult" class="scanner-result">Last RFID: -</p>
                         <p class="scanner-note">If your RFID reader acts as keyboard wedge, place cursor in input then tap card.</p>
-                        <p class="scanner-note">For external hardware, send data to Firebase path <strong>rfidScans/latest</strong> with <strong>tag</strong>, <strong>source</strong>, and <strong>scannedAt</strong>.</p>
+                        <p class="scanner-note">For external hardware, send data to Firebase path <strong>rfidScans/latest</strong> with <strong>tag</strong>, <strong>source</strong>, and <strong>scannedAt</strong>. Make sure the device or token you use is allowed by your Firebase rules.</p>
                     </div>
                 </div>
             </section>

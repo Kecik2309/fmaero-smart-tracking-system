@@ -9,12 +9,13 @@ FMAERO Smart Tracking System is a web-based inventory tracking project for wareh
 
 ## Features
 
-- Login system with role-based access
+- Firebase Authentication login with role-based access
 - Admin dashboard and worker management
 - Manager, storekeeper, and supervisor dashboards
 - Inventory and material tracking workflow
+- Transaction history and reports now read the full transaction dataset
 - Firebase Hosting deployment
-- Firebase Realtime Database integration
+- Firebase Realtime Database integration with rules
 
 ## Project Structure
 
@@ -46,6 +47,8 @@ FMAERO Smart Tracking System is a web-based inventory tracking project for wareh
 - Check that the root URL redirects to `login.html`
 - Test login flow for each role
 - Confirm dashboard navigation works correctly
+- Verify Firebase Authentication login and password reset are working
+- Verify worker disable or activate flow is working from admin worker management
 - Verify Firebase Realtime Database reads and writes are working
 - Re-deploy after any update to the HTML, CSS, or JavaScript files
 
@@ -66,7 +69,7 @@ Use the following commands in the project folder:
 git add .
 git commit -m "update project"
 git push
-firebase.cmd deploy --only hosting
+firebase.cmd deploy --only hosting,database
 ```
 
 ## Tech Stack
@@ -75,6 +78,7 @@ firebase.cmd deploy --only hosting
 - CSS
 - JavaScript
 - Firebase Hosting
+- Firebase Authentication
 - Firebase Realtime Database
 
 ## Author

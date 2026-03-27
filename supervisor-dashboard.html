@@ -295,24 +295,6 @@
       .logout-btn { width: 100%; }
     }
   </style>
-  <script>
-    (function () {
-      const raw = localStorage.getItem("fmaero_auth");
-      if (!raw) {
-        window.location.replace("login.html");
-        return;
-      }
-      try {
-        const session = JSON.parse(raw);
-        if (!session || session.role !== "siteSupervisor") {
-          window.location.replace("login.html");
-        }
-      } catch {
-        localStorage.removeItem("fmaero_auth");
-        window.location.replace("login.html");
-      }
-    }());
-  </script>
 </head>
 <body>
   <div class="page">
@@ -379,20 +361,22 @@
     </footer>
   </div>
 
-  <script>
-    const session = JSON.parse(localStorage.getItem("fmaero_auth") || "{}");
-    const sessionName = document.getElementById("sessionName");
-    if (sessionName && session.name) {
-      sessionName.textContent = `Signed in as ${session.name}.`;
-    } else if (sessionName && session.email) {
-      sessionName.textContent = `Signed in as ${session.email}.`;
-    }
+  <script type="module">
+    import { guardPage, logoutToLogin } from "./page-auth.js";
 
-    function logout() {
-      localStorage.removeItem("fmaero_auth");
-      localStorage.removeItem("userRole");
-      window.location.replace("login.html");
-    }
+    const sessionName = document.getElementById("sessionName");
+
+    guardPage(["siteSupervisor"], {
+      onAuthorized(session) {
+        if (sessionName) {
+          sessionName.textContent = `Signed in as ${session.profile.name || session.user.email}.`;
+        }
+      }
+    });
+
+    window.logout = function logout() {
+      return logoutToLogin();
+    };
   </script>
 </body>
 </html>

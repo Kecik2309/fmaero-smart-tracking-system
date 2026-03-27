@@ -1,0 +1,49 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'admin' && root.child('users/' + auth.uid + '/status').val() === 'active'",
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'admin')",
+        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || (!data.exists() && auth.uid === $uid && newData.child('email').val() === auth.token.email && newData.child('status').val() === 'active'))",
+        "uid": {
+          ".validate": "newData.val() === $uid"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+        },
+        "email": {
+          ".validate": "newData.isString() && newData.val().length > 3"
+        },
+        "role": {
+          ".validate": "newData.val() === 'admin' || newData.val() === 'manager' || newData.val() === 'storekeeper' || newData.val() === 'siteSupervisor'"
+        },
+        "status": {
+          ".validate": "newData.val() === 'active' || newData.val() === 'disabled'"
+        },
+        "$other": {
+          ".validate": true
+        }
+      }
+    },
+    "materials": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active'",
+      "$id": {
+        ".write": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'storekeeper')"
+      }
+    },
+    "transactions": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active'",
+      "$id": {
+        ".write": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'storekeeper')"
+      }
+    },
+    "rfidScans": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active'",
+      "latest": {
+        ".write": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'storekeeper')"
+      }
+    }
+  }
+}

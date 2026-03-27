@@ -62,8 +62,9 @@ const char* FIREBASE_AUTH = "";
 
 `FIREBASE_AUTH`:
 
-- Biarkan kosong jika Firebase RTDB anda benarkan write tanpa token untuk device ini.
-- Isi token / database secret jika rules Firebase anda perlukan auth.
+- Jika rules RTDB anda ketat, device RFID perlu gunakan kaedah auth yang dibenarkan oleh rules projek anda.
+- Jangan anggap path `rfidScans/latest` masih terbuka untuk write tanpa kawalan.
+- Jika anda terus guna ESP32 untuk production/demo akhir, semak semula cara device authenticate ke Firebase sebelum test live.
 
 ## Cara sistem ini bekerja
 
@@ -109,7 +110,7 @@ Web app anda sekarang dengar path ini dan akan terus proses tag tersebut, termas
 
 - Semak Serial Monitor, tengok sama ada tag berjaya dibaca.
 - Semak Wi-Fi ESP32 betul-betul connected.
-- Semak Firebase RTDB rules benarkan write ke `rfidScans/latest`.
+- Semak Firebase RTDB rules benarkan write ke `rfidScans/latest` untuk device atau token yang anda guna.
 - Semak nilai `RFID Tag` dalam material sama tepat dengan UID tag.
 - Semak web app dibuka pada page inventory utama.
 

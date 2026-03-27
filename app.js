@@ -1,18 +1,6 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, push, set, onValue, remove, update, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyA9l6N0ZOB8c5X_WZfzluqW8E0Tl1C1X6U",
-    authDomain: "fmaero-smart-tracking-system.firebaseapp.com",
-    databaseURL: "https://fmaero-smart-tracking-system-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "fmaero-smart-tracking-system",
-    storageBucket: "fmaero-smart-tracking-system.firebasestorage.app",
-    messagingSenderId: "170664221165",
-    appId: "1:170664221165:web:034157d463c44387bd6fe4"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+import { ref, push, set, onValue, remove, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { db } from "./firebase-client.js";
+import { requireRole, logoutToLogin, clearCachedSession } from "./auth-utils.js";
 const COMPANY_NAME = "FMAERO Smart Tracking System";
 const COMPANY_LOGO_URL = "./logo_company_1.png"; // replace with your real logo path
 let companyLogoDataUrl = "";
@@ -80,7 +68,7 @@ const ROLES = {
 
 const SETTINGS_STORAGE_KEY = "fmaero_settings_v1";
 const REPORT_INFO_STORAGE_KEY = "fmaero_report_info_v1";
-const AUTH_STORAGE_KEY = "fmaero_auth";
+const LOW_STOCK_THRESHOLD = 10;
 const DEFAULT_SETTINGS = {
     theme: "blue",
     defaultRange: "all"
@@ -138,72 +126,7 @@ let rfidAutoSubmitTimer = null;
 let lastExternalRfidSignature = "";
 let lastExternalRfidAt = 0;
 let hasPrimedExternalRfidListener = false;
-
-function loadAuthSession() {
-    try {
-        const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (!raw) return null;
-
-        const parsed = JSON.parse(raw);
-        if (!parsed?.email || !parsed?.role) return null;
-
-        return {
-            userId: parsed.userId || null,
-            name: parsed.name || "",
-            email: String(parsed.email).trim().toLowerCase(),
-            role: normalizeRole(parsed.role) || String(parsed.role).trim().toLowerCase()
-        };
-    } catch {
-        return null;
-    }
-}
-
-function persistAuthSession(session) {
-    if (!session?.email || !session?.role) return;
-
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
-        userId: session.userId || null,
-        name: session.name || "",
-        email: String(session.email).trim().toLowerCase(),
-        role: session.role
-    }));
-}
-
-function clearAuthSession() {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    localStorage.removeItem("userRole");
-}
-
-function getSessionDisplayName(role) {
-    if (role === "admin") return "Administrator";
-    return formatRoleLabel(role);
-}
-
-function applyStoredSession(force = false) {
-    const session = loadAuthSession();
-    if (!session) return false;
-    if (!force && state.user) return true;
-
-    state.user = {
-        uid: session.userId || `local-${session.role}`,
-        email: session.email,
-        displayName: session.name || getSessionDisplayName(session.role)
-    };
-    state.role = session.role;
-    state.userProfile = {
-        uid: session.userId || null,
-        email: session.email,
-        name: session.name || getSessionDisplayName(session.role),
-        role: session.role
-    };
-
-    return true;
-}
-
-function redirectToLogin() {
-    clearAuthSession();
-    window.location.replace("login.html");
-}
+let hasRealtimeBindings = false;
 
 function applyTheme(theme) {
     const selected = ["blue", "teal", "slate"].includes(theme) ? theme : DEFAULT_SETTINGS.theme;
@@ -731,7 +654,7 @@ function openMaterialDetailsModal(material) {
 
     activeMaterialForQr = material;
     const stockValue = Number(material.stock) || 0;
-    const isLowStock = stockValue <= 10;
+    const isLowStock = stockValue <= LOW_STOCK_THRESHOLD;
 
     const codeEl = document.getElementById("materialDetailsCode");
     const nameEl = document.getElementById("materialDetailsName");
@@ -1184,6 +1107,26 @@ function normalizeTransactionReason(value, fallback = "Other") {
     return allowedReasons.has(normalized) ? normalized : fallback;
 }
 
+async function resolvePreferredQrCamera() {
+    if (typeof Html5Qrcode === "undefined" || typeof Html5Qrcode.getCameras !== "function") {
+        return { facingMode: "environment" };
+    }
+
+    try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (!Array.isArray(cameras) || !cameras.length) {
+            return { facingMode: "environment" };
+        }
+
+        const rearCamera = cameras.find((camera) => /back|rear|environment/i.test(String(camera.label || "")));
+        if (rearCamera?.id) return rearCamera.id;
+
+        return cameras[0].id || { facingMode: "environment" };
+    } catch {
+        return { facingMode: "environment" };
+    }
+}
+
 function getStatusBadgeClass(status) {
     const normalized = String(status || "").trim().toUpperCase();
     if (normalized === "IN") return "status-badge status-in";
@@ -1478,8 +1421,8 @@ function getSortedMaterials(materials) {
 function passesFilter(material) {
     const stock = Number(material.stock) || 0;
 
-    if (state.filter === "low") return stock <= 10;
-    if (state.filter === "normal") return stock > 10;
+    if (state.filter === "low") return stock <= LOW_STOCK_THRESHOLD;
+    if (state.filter === "normal") return stock > LOW_STOCK_THRESHOLD;
     return true;
 }
 
@@ -1540,7 +1483,8 @@ function generateReportId(prefix) {
 }
 
 function downloadFile(content, fileName, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
+    const needsBom = typeof content === "string" && /excel|csv|xml/i.test(String(mimeType || ""));
+    const blob = new Blob(needsBom ? ["\uFEFF", content] : [content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1624,17 +1568,7 @@ function buildTransactionsExcelReport(rows, meta) {
     const stockOut = rows.reduce((sum, row) => sum + (String(row[2]).toUpperCase() === "OUT" ? (Number(row[5]) || 0) : 0), 0);
     const stockIn = rows.reduce((sum, row) => sum + (String(row[2]).toUpperCase() === "IN" ? (Number(row[5]) || 0) : 0), 0);
 
-    const maxLenByCol = headers.map((h) => String(h).length);
-    rows.forEach((row) => {
-        row.forEach((cell, idx) => {
-            maxLenByCol[idx] = Math.max(maxLenByCol[idx], String(cell ?? "").length);
-        });
-    });
-    const colWidths = maxLenByCol.map((len, idx) => {
-        const min = idx === 0 ? 48 : 72;
-        const rough = len * 6.7 + 24;
-        return Math.max(min, Math.min(260, rough));
-    });
+    const colWidths = [44, 92, 70, 108, 210, 60, 138, 120, 92];
 
     let currentRow = 1;
     const rowXml = [];
@@ -1649,7 +1583,7 @@ function buildTransactionsExcelReport(rows, meta) {
 
     const pushMetaRow = (label, value) => {
         rowXml.push(
-            `<Row ss:Height="18"><Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">${escapeXmlValue(label)}</Data></Cell><Cell ss:StyleID="sMetaValue"><Data ss:Type="String">${escapeXmlValue(value)}</Data></Cell></Row>`
+            `<Row ss:Height="20"><Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">${escapeXmlValue(label)}</Data></Cell><Cell ss:MergeAcross="3" ss:StyleID="sMetaValue"><Data ss:Type="String">${escapeXmlValue(value)}</Data></Cell></Row>`
         );
         currentRow += 1;
     };
@@ -1680,7 +1614,6 @@ function buildTransactionsExcelReport(rows, meta) {
         const reasonText = String(row[3] ?? "");
         const reasonStyle = reasonText === "Waste" ? "sReasonWaste" : "sCellCenter";
         const stockNumber = Number(row[5]) || 0;
-        const stockStyle = stockNumber < 10 ? "sStockLow" : "sCellCenter";
         rowXml.push(
             `<Row ss:Height="19">` +
                 `<Cell ss:StyleID="sCellCenter"><Data ss:Type="Number">${Number(row[0]) || 0}</Data></Cell>` +
@@ -1688,10 +1621,10 @@ function buildTransactionsExcelReport(rows, meta) {
                 `<Cell ss:StyleID="${statusStyle}"><Data ss:Type="String">${escapeXmlValue(row[2])}</Data></Cell>` +
                 `<Cell ss:StyleID="${reasonStyle}"><Data ss:Type="String">${escapeXmlValue(row[3])}</Data></Cell>` +
                 `<Cell ss:StyleID="sCellText"><Data ss:Type="String">${escapeXmlValue(row[4])}</Data></Cell>` +
-                `<Cell ss:StyleID="${stockStyle}"><Data ss:Type="Number">${stockNumber}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[6])}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[7])}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[8])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellNumber"><Data ss:Type="Number">${stockNumber}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellDate"><Data ss:Type="String">${escapeXmlValue(row[6])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellText"><Data ss:Type="String">${escapeXmlValue(row[7])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellText"><Data ss:Type="String">${escapeXmlValue(row[8])}</Data></Cell>` +
             `</Row>`
         );
         currentRow += 1;
@@ -1757,6 +1690,7 @@ function buildTransactionsExcelReport(rows, meta) {
    </Borders>
   </Style>
   <Style ss:ID="sMetaLabel">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
    <Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#000000"/>
    <Borders>
     <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
@@ -1767,6 +1701,7 @@ function buildTransactionsExcelReport(rows, meta) {
    <Interior ss:Color="#EEF3FC" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="sMetaValue">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/>
    <Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/>
    <Borders>
     <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
@@ -1798,6 +1733,26 @@ function buildTransactionsExcelReport(rows, meta) {
   </Style>
   <Style ss:ID="sCellText">
    <Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/>
+   <Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+   <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="sCellDate">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="sCellNumber">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
    <Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/>
    <Borders>
     <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
@@ -1879,7 +1834,7 @@ function buildTransactionsExcelReport(rows, meta) {
     <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
     <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
    </Borders>
- </Style>
+  </Style>
  </Styles>
  <Worksheet ss:Name="Transactions Export">
   <Table ss:ExpandedColumnCount="9" ss:ExpandedRowCount="${currentRow}">
@@ -1925,20 +1880,10 @@ function buildMaterialsExcelReport(rows, meta) {
         ["Feedback", info.feedback || "-"]
     ];
 
-    const lowStockCount = rows.reduce((sum, row) => sum + ((Number(row[4]) || 0) < 10 ? 1 : 0), 0);
+    const lowStockCount = rows.reduce((sum, row) => sum + ((Number(row[4]) || 0) <= LOW_STOCK_THRESHOLD ? 1 : 0), 0);
     const totalStock = rows.reduce((sum, row) => sum + (Number(row[4]) || 0), 0);
 
-    const maxLenByCol = headers.map((h) => String(h).length);
-    rows.forEach((row) => {
-        row.forEach((cell, idx) => {
-            maxLenByCol[idx] = Math.max(maxLenByCol[idx], String(cell ?? "").length);
-        });
-    });
-    const colWidths = maxLenByCol.map((len, idx) => {
-        const min = idx === 0 ? 48 : 84;
-        const rough = len * 6.4 + 24;
-        return Math.max(min, Math.min(280, rough));
-    });
+    const colWidths = [44, 88, 118, 198, 60, 92, 132, 138, 132, 138];
 
     let currentRow = 1;
     const rowXml = [];
@@ -1951,7 +1896,7 @@ function buildMaterialsExcelReport(rows, meta) {
 
     const pushMetaRow = (label, value) => {
         rowXml.push(
-            `<Row ss:Height="18"><Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">${escapeXmlValue(label)}</Data></Cell><Cell ss:StyleID="sMetaValue"><Data ss:Type="String">${escapeXmlValue(value)}</Data></Cell></Row>`
+            `<Row ss:Height="20"><Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">${escapeXmlValue(label)}</Data></Cell><Cell ss:MergeAcross="4" ss:StyleID="sMetaValue"><Data ss:Type="String">${escapeXmlValue(value)}</Data></Cell></Row>`
         );
         currentRow += 1;
     };
@@ -1975,20 +1920,20 @@ function buildMaterialsExcelReport(rows, meta) {
 
     rows.forEach((row) => {
         const stock = Number(row[4]) || 0;
-        const stockStyle = stock < 10 ? "sStockLow" : "sCellCenter";
+        const stockStyle = stock <= LOW_STOCK_THRESHOLD ? "sStockLow" : "sCellNumber";
         const statusStyle = String(row[5]).toUpperCase().includes("LOW") ? "sStatusOut" : "sStatusIn";
         rowXml.push(
             `<Row ss:Height="19">` +
                 `<Cell ss:StyleID="sCellCenter"><Data ss:Type="Number">${Number(row[0]) || 0}</Data></Cell>` +
                 `<Cell ss:StyleID="sCellCode"><Data ss:Type="String">${escapeXmlValue(row[1])}</Data></Cell>` +
                 `<Cell ss:StyleID="sCellCode"><Data ss:Type="String">${escapeXmlValue(row[2])}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[3])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellText"><Data ss:Type="String">${escapeXmlValue(row[3])}</Data></Cell>` +
                 `<Cell ss:StyleID="${stockStyle}"><Data ss:Type="Number">${stock}</Data></Cell>` +
                 `<Cell ss:StyleID="${statusStyle}"><Data ss:Type="String">${escapeXmlValue(row[5])}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[6])}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[7])}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[8])}</Data></Cell>` +
-                `<Cell ss:StyleID="sCellCenter"><Data ss:Type="String">${escapeXmlValue(row[9])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellDate"><Data ss:Type="String">${escapeXmlValue(row[6])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellText"><Data ss:Type="String">${escapeXmlValue(row[7])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellDate"><Data ss:Type="String">${escapeXmlValue(row[8])}</Data></Cell>` +
+                `<Cell ss:StyleID="sCellText"><Data ss:Type="String">${escapeXmlValue(row[9])}</Data></Cell>` +
             `</Row>`
         );
         currentRow += 1;
@@ -2003,7 +1948,7 @@ function buildMaterialsExcelReport(rows, meta) {
     currentRow += 1;
     rowXml.push(`<Row ss:Height="19"><Cell ss:StyleID="sSummaryLabel"><Data ss:Type="String">Total Stock</Data></Cell><Cell ss:StyleID="sSummaryValue"><Data ss:Type="Number">${totalStock}</Data></Cell></Row>`);
     currentRow += 1;
-    rowXml.push(`<Row ss:Height="19"><Cell ss:StyleID="sSummaryLabel"><Data ss:Type="String">Low Stock (&lt;10)</Data></Cell><Cell ss:StyleID="sSummaryValue"><Data ss:Type="Number">${lowStockCount}</Data></Cell></Row>`);
+    rowXml.push(`<Row ss:Height="19"><Cell ss:StyleID="sSummaryLabel"><Data ss:Type="String">Low Stock (&lt;= ${LOW_STOCK_THRESHOLD})</Data></Cell><Cell ss:StyleID="sSummaryValue"><Data ss:Type="Number">${lowStockCount}</Data></Cell></Row>`);
     currentRow += 1;
 
     const columnXml = colWidths.map((w) => `<Column ss:AutoFitWidth="1" ss:Width="${w.toFixed(0)}"/>`).join("");
@@ -2023,11 +1968,14 @@ function buildMaterialsExcelReport(rows, meta) {
   <Style ss:ID="sSubtitle"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#000000"/></Style>
   <Style ss:ID="sGenerated"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/></Style>
   <Style ss:ID="sSection"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#000000"/><Interior ss:Color="#DCE6F8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-  <Style ss:ID="sMetaLabel"><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders><Interior ss:Color="#EEF3FC" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="sMetaValue"><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+  <Style ss:ID="sMetaLabel"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders><Interior ss:Color="#EEF3FC" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="sMetaValue"><Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
   <Style ss:ID="sHeader"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#000000"/><Interior ss:Color="#E6E6E6" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
   <Style ss:ID="sCellCenter"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+  <Style ss:ID="sCellText"><Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
   <Style ss:ID="sCellCode"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+  <Style ss:ID="sCellDate"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+  <Style ss:ID="sCellNumber"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
   <Style ss:ID="sStatusIn"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Interior ss:Color="#E8F5E9" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
   <Style ss:ID="sStatusOut"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Interior ss:Color="#FDECEC" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
   <Style ss:ID="sStockLow"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Arial" ss:Size="11" ss:Color="#000000"/><Interior ss:Color="#FFEBD6" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
@@ -2087,7 +2035,7 @@ function updateReportsPanel() {
     const rangeOut = filteredTransactions
         .filter((tx) => tx.type === "OUT")
         .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
-    const lowStock = state.materials.filter((m) => (Number(m.stock) || 0) <= 10).length;
+    const lowStock = state.materials.filter((m) => (Number(m.stock) || 0) <= LOW_STOCK_THRESHOLD).length;
 
     if (totalMaterialsEl) totalMaterialsEl.textContent = String(state.materials.length);
     if (totalTransactionsEl) totalTransactionsEl.textContent = String(state.transactions.length);
@@ -2174,7 +2122,7 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
     if (title === "Transactions Export") {
         const normalizedHeaders = headers.map((h) => (h === "Bil." ? "Bil" : h));
         const headerRowHtml = `<tr>${normalizedHeaders.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
-        const exportedBy = "Najmina";
+        const exportedBy = finalMeta.generatedBy && finalMeta.generatedBy !== "-" ? finalMeta.generatedBy : "System User";
         const reportId = meta.reportId || generateReportId("TX");
         const reportVersion = "v1.0";
         const exportModule = "Inventory Tracking";
@@ -2380,6 +2328,7 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         align-items: center;
                         gap: 12px;
                         background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+                        box-shadow: 0 8px 18px rgba(30, 58, 138, 0.08);
                     }
                     .logo {
                         width: 62px;
@@ -2413,6 +2362,8 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         background: #fff;
                         padding: 6px 8px;
                         min-width: 205px;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
                     }
                     .header-right .official {
                         color: #1e3a8a;
@@ -2463,6 +2414,8 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         padding: 5px 8px;
                         font-size: 10.5px;
                         color: #0f172a;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
                     }
                     .sys-info-table .label {
                         background: #edf3ff;
@@ -2473,6 +2426,7 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         border: 1px solid #7f96c8;
                         border-radius: 8px;
                         overflow: hidden;
+                        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
                     }
                     .tx-table th,
                     .tx-table td {
@@ -2482,11 +2436,18 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         line-height: 1.35;
                         vertical-align: middle;
                         text-align: left;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
                     }
                     .tx-table th {
                         background: #e8edf7;
                         color: #0f172a;
                         font-weight: 800;
+                    }
+                    .tx-table td:nth-child(1),
+                    .tx-table td:nth-child(6),
+                    .tx-table td:nth-child(9) {
+                        text-align: center;
                     }
                     .pdf-badge {
                         display: inline-block;
@@ -2676,7 +2637,7 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
     if (title === "Materials Export") {
         const normalizedHeaders = headers.map((h) => (h === "Bil." ? "Bil" : h));
         const headerRowHtml = `<tr>${normalizedHeaders.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
-        const exportedBy = finalMeta.generatedBy && finalMeta.generatedBy !== "-" ? finalMeta.generatedBy : "Najmina";
+        const exportedBy = finalMeta.generatedBy && finalMeta.generatedBy !== "-" ? finalMeta.generatedBy : "System User";
         const reportId = meta.reportId || generateReportId("MT");
         const reportVersion = "v1.0";
         const exportModule = "Inventory Tracking";
@@ -2735,12 +2696,12 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                     adjusted[0] = String(base + idx + 1);
                     return `<tr>${adjusted
                         .map((cell, cellIndex) => {
-                            if (cellIndex === 3) {
+                            if (cellIndex === 4) {
                                 const stockValue = Number(cell) || 0;
-                                const stockClass = stockValue <= 10 ? "material-stock-low" : "";
+                                const stockClass = stockValue <= LOW_STOCK_THRESHOLD ? "material-stock-low" : "";
                                 return `<td class="${stockClass}">${escapeHtml(cell)}</td>`;
                             }
-                            if (cellIndex === 4) {
+                            if (cellIndex === 5) {
                                 const statusText = String(cell || "-");
                                 const isLow = statusText.toUpperCase().includes("LOW");
                                 const badgeClass = isLow ? "low" : "normal";
@@ -2887,6 +2848,7 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         align-items: center;
                         gap: 12px;
                         background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+                        box-shadow: 0 8px 18px rgba(30, 58, 138, 0.08);
                     }
                     .logo {
                         width: 62px;
@@ -2920,6 +2882,8 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         background: #fff;
                         padding: 6px 8px;
                         min-width: 205px;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
                     }
                     .header-right .official {
                         color: #1e3a8a;
@@ -2970,6 +2934,8 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         padding: 5px 8px;
                         font-size: 10.5px;
                         color: #0f172a;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
                     }
                     .sys-info-table .label {
                         background: #edf3ff;
@@ -2980,6 +2946,7 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         border: 1px solid #7f96c8;
                         border-radius: 8px;
                         overflow: hidden;
+                        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
                     }
                     .mx-table th,
                     .mx-table td {
@@ -2989,6 +2956,8 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         line-height: 1.35;
                         vertical-align: middle;
                         text-align: left;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
                     }
                     .mx-table th {
                         background: #e8edf7;
@@ -2996,6 +2965,11 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                         font-weight: 800;
                         text-transform: uppercase;
                         letter-spacing: 0.2px;
+                    }
+                    .mx-table td:nth-child(1),
+                    .mx-table td:nth-child(5),
+                    .mx-table td:nth-child(6) {
+                        text-align: center;
                     }
                     .mx-table tbody tr { height: 30px; }
                     .mx-table tbody tr:nth-child(even) { background: #f8fbff; }
@@ -3189,15 +3163,16 @@ async function printTableAsPdf(title, headers, rows, meta = {}) {
                 .company-title { margin: 0; font-size: 22px; color: var(--primary); font-weight: 800; letter-spacing: 0.2px; }
                 .report-title { margin: 4px 0 0; font-size: 14px; color: var(--muted); font-weight: 700; }
                 .generated { font-size: 12px; color: var(--muted); font-weight: 600; text-align: right; background: #fff; border: 1px solid #c9d7f4; border-radius: 10px; padding: 8px 10px; min-width: 210px; line-height: 1.45; }
+                .generated { overflow-wrap: anywhere; word-break: break-word; }
                 .generated .stamp { color: var(--primary); font-weight: 800; letter-spacing: 0.2px; }
                 .print-header-spacer { height: 128px; }
                 .meta-box { margin: 10px 0 14px; border: 1px solid #c6d3ef; border-radius: 10px; background: #ffffff; overflow: hidden; }
                 .meta-table { width: 100%; border-collapse: collapse; }
-                .meta-table td { border: 1px solid #c7d4ef; padding: 7px 10px; font-size: 11px; color: #000; font-family: Arial, sans-serif; }
+                .meta-table td { border: 1px solid #c7d4ef; padding: 7px 10px; font-size: 11px; color: #000; font-family: Arial, sans-serif; overflow-wrap: anywhere; word-break: break-word; }
                 .meta-table td.label { width: 160px; background: #edf3ff; color: #0f172a; font-weight: 700; }
                 .report-table-wrap { border: 1px solid #7e93c2; border-radius: 10px; overflow: hidden; }
                 .report-table { border-collapse: collapse; width: 100%; border: none; }
-                .report-table th, .report-table td { border: 1px solid #7e93c2; padding: 9px; text-align: left; color: #000; font-family: Arial, sans-serif; font-size: 11px; }
+                .report-table th, .report-table td { border: 1px solid #7e93c2; padding: 9px; text-align: left; color: #000; font-family: Arial, sans-serif; font-size: 11px; overflow-wrap: anywhere; word-break: break-word; }
                 .report-table th { background: #dfe9ff; color: #0f172a; font-weight: 800; text-transform: uppercase; letter-spacing: 0.2px; }
                 .report-table td { font-weight: 400; }
                 .report-table tbody tr:nth-child(even) { background: #f7f9ff; }
@@ -3436,7 +3411,7 @@ function renderMaterialTable() {
     const deleteDisabled = canDelete ? "" : "disabled title='No permission'";
 
     filtered.forEach((material, index) => {
-        const isLowStock = (Number(material.stock) || 0) <= 10;
+        const isLowStock = (Number(material.stock) || 0) <= LOW_STOCK_THRESHOLD;
         const safeCode = escapeJsSingle(material.code);
         const safeId = escapeJsSingle(material.id);
 
@@ -3563,6 +3538,11 @@ window.startQrScanner = async function () {
         updateScannerUiStatus("Library not loaded");
         return;
     }
+    if (!window.isSecureContext) {
+        notify("QR scanner needs HTTPS or a secure browser context.", "error");
+        updateScannerUiStatus("Secure context required");
+        return;
+    }
     if (isQrRunning) {
         notify("QR scanner already running.");
         updateScannerUiStatus("Running");
@@ -3573,9 +3553,17 @@ window.startQrScanner = async function () {
         if (!qrScannerInstance) {
             qrScannerInstance = new Html5Qrcode("qrReader");
         }
+        const cameraConfig = await resolvePreferredQrCamera();
+        const qrReaderEl = document.getElementById("qrReader");
+        const qrBoxSize = Math.max(Math.min((qrReaderEl?.clientWidth || 280) - 32, 260), 180);
+
         await qrScannerInstance.start(
-            { facingMode: "environment" },
-            { fps: 8, qrbox: { width: 220, height: 220 } },
+            cameraConfig,
+            {
+                fps: 8,
+                qrbox: { width: qrBoxSize, height: qrBoxSize },
+                aspectRatio: 1
+            },
             async (decodedText) => {
                 await handleScannedCode(decodedText, "qr");
             }
@@ -3585,7 +3573,16 @@ window.startQrScanner = async function () {
         notify("QR scanner started.", "success");
     } catch (error) {
         updateScannerUiStatus("Failed to start");
-        notify(`Unable to start QR scanner: ${error.message || error}`, "error");
+        const message = String(error?.message || error || "");
+        if (/permission|denied|notallowed/i.test(message)) {
+            notify("Camera permission was denied. Please allow camera access in your phone browser.", "error");
+            return;
+        }
+        if (/notfound|devicesnotfound|overconstrained/i.test(message)) {
+            notify("No suitable camera was found. Try reopening the page and use a different phone browser.", "error");
+            return;
+        }
+        notify(`Unable to start QR scanner: ${message}`, "error");
     }
 };
 
@@ -3751,7 +3748,7 @@ window.sortTable = function sortTable(key) {
 };
 
 function loadTransactions() {
-    const transactionsRef = query(ref(db, "transactions"), limitToLast(50));
+    const transactionsRef = ref(db, "transactions");
     onValue(transactionsRef, (snapshot) => {
         const records = [];
 
@@ -3817,7 +3814,7 @@ function listenForExternalRfidScans() {
 function updateSummaryCards() {
     const totalMaterials = state.materials.length;
     const totalStock = state.materials.reduce((sum, material) => sum + (Number(material.stock) || 0), 0);
-    const lowStockCount = state.materials.filter((material) => (Number(material.stock) || 0) <= 10).length;
+    const lowStockCount = state.materials.filter((material) => (Number(material.stock) || 0) <= LOW_STOCK_THRESHOLD).length;
     const normalCount = totalMaterials - lowStockCount;
 
     document.getElementById("totalMaterials").innerText = totalMaterials;
@@ -3831,7 +3828,7 @@ function updateSummaryCards() {
     const badge = document.getElementById("lowStockBadge");
     if (lowStockCount > 0) {
         const lowStockCodes = state.materials
-            .filter((material) => (Number(material.stock) || 0) <= 10)
+            .filter((material) => (Number(material.stock) || 0) <= LOW_STOCK_THRESHOLD)
             .map((material) => material.code || material.name || "-")
             .filter((value) => String(value).trim() !== "");
         const previewCodes = lowStockCodes.slice(0, 5).join(", ");
@@ -3894,7 +3891,7 @@ function updateCharts() {
     const inSeries = monthLabels.map((m) => monthlyMap.get(m).in);
     const outSeries = monthLabels.map((m) => monthlyMap.get(m).out);
 
-    const lowCount = state.materials.filter((m) => (Number(m.stock) || 0) <= 10).length;
+    const lowCount = state.materials.filter((m) => (Number(m.stock) || 0) <= LOW_STOCK_THRESHOLD).length;
     const normalCount = Math.max(state.materials.length - lowCount, 0);
 
     const activeCodes = new Set(
@@ -4005,21 +4002,11 @@ window.logout = async function () {
         return;
     }
 
-    clearAuthSession();
     state.user = null;
     state.role = null;
     state.userProfile = null;
-    window.location.replace("login.html");
+    await logoutToLogin();
 };
-
-const storedSessionApplied = applyStoredSession(true);
-if (!storedSessionApplied) {
-    redirectToLogin();
-}
-
-clearRoleListener();
-updateAuthUI();
-renderMaterialTable();
 
 window.exportMaterialsExcel = function () {
     if (!requirePermission("export materials", "export_reports")) return;
@@ -4030,7 +4017,7 @@ window.exportMaterialsExcel = function () {
         material.rfidTag || "-",
         material.name || "-",
         material.stock ?? 0,
-        (Number(material.stock) || 0) <= 10 ? "LOW STOCK" : "Normal",
+        (Number(material.stock) || 0) <= LOW_STOCK_THRESHOLD ? "LOW STOCK" : "Normal",
         material.createdAt || "-",
         material.createdByEmail || "-",
         material.updatedAt || "-",
@@ -4062,7 +4049,7 @@ window.exportMaterialsPDF = async function () {
         material.rfidTag || "-",
         material.name || "-",
         material.stock ?? 0,
-        (Number(material.stock) || 0) <= 10 ? "LOW STOCK" : "Normal",
+        (Number(material.stock) || 0) <= LOW_STOCK_THRESHOLD ? "LOW STOCK" : "Normal",
         material.createdAt || "-",
         material.createdByEmail || "-",
         material.updatedAt || "-",
@@ -4471,34 +4458,39 @@ function setupSidebarNavigation() {
     sections.forEach((section) => observer.observe(section));
 }
 
-const materialsRef = ref(db, "materials");
-onValue(materialsRef, (snapshot) => {
-    const materials = [];
+function startRealtimeBindings() {
+    if (hasRealtimeBindings) return;
+    hasRealtimeBindings = true;
 
-    snapshot.forEach((childSnapshot) => {
-        const data = childSnapshot.val() || {};
-        materials.push({
-            id: childSnapshot.key,
-            code: data.code,
-            name: data.name,
-            rfidTag: data.rfidTag || "",
-            stock: Number(data.stock) || 0,
-            createdAt: data.createdAt || "-",
-            createdByEmail: data.createdByEmail || "-",
-            updatedAt: data.updatedAt || data.createdAt || "-",
-            updatedByEmail: data.updatedByEmail || data.createdByEmail || "-"
+    const materialsRef = ref(db, "materials");
+    onValue(materialsRef, (snapshot) => {
+        const materials = [];
+
+        snapshot.forEach((childSnapshot) => {
+            const data = childSnapshot.val() || {};
+            materials.push({
+                id: childSnapshot.key,
+                code: data.code,
+                name: data.name,
+                rfidTag: data.rfidTag || "",
+                stock: Number(data.stock) || 0,
+                createdAt: data.createdAt || "-",
+                createdByEmail: data.createdByEmail || "-",
+                updatedAt: data.updatedAt || data.createdAt || "-",
+                updatedByEmail: data.updatedByEmail || data.createdByEmail || "-"
+            });
         });
+
+        state.materials = materials;
+        updateSummaryCards();
+        updateReportsPanel();
+        renderMaterialTable();
+        updateCharts();
     });
 
-    state.materials = materials;
-    updateSummaryCards();
-    updateReportsPanel();
-    renderMaterialTable();
-    updateCharts();
-});
-
-loadTransactions();
-listenForExternalRfidScans();
+    loadTransactions();
+    listenForExternalRfidScans();
+}
 
 const txFromInput = document.getElementById("txFromDate");
 const txToInput = document.getElementById("txToDate");
@@ -4547,13 +4539,44 @@ if (rfidInput) {
     });
 }
 
-state.settings = loadSettings();
-state.reportInfo = loadReportInfo();
-applyTheme(state.settings.theme);
-applyDefaultDateRange();
-updateSettingsProfileUI();
-syncReportInfoUi();
-updateScannerUiStatus("Idle");
+async function bootstrap() {
+    try {
+        const session = await requireRole([ROLES.MANAGER, ROLES.STOREKEEPER, ROLES.SITE_SUPERVISOR]);
+        if (!session?.profile) return;
 
-setupSidebarNavigation();
-setupModalHandlers();
+        state.user = {
+            uid: session.user.uid,
+            email: session.user.email || session.profile.email,
+            displayName: session.profile.name || session.user.displayName || session.user.email || "User"
+        };
+        state.role = session.profile.role;
+        state.userProfile = {
+            uid: session.profile.uid,
+            email: session.profile.email || session.user.email || "",
+            name: session.profile.name || session.user.displayName || "",
+            role: session.profile.role
+        };
+
+        startRealtimeBindings();
+        clearRoleListener();
+        updateAuthUI();
+        renderMaterialTable();
+
+        state.settings = loadSettings();
+        state.reportInfo = loadReportInfo();
+        applyTheme(state.settings.theme);
+        applyDefaultDateRange();
+        updateSettingsProfileUI();
+        syncReportInfoUi();
+        updateScannerUiStatus("Idle");
+
+        setupSidebarNavigation();
+        setupModalHandlers();
+    } catch (error) {
+        console.error("Application bootstrap failed:", error);
+        clearCachedSession();
+        window.location.replace("login.html");
+    }
+}
+
+bootstrap();

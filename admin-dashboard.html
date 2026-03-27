@@ -367,26 +367,6 @@
             }
         }
     </style>
-    <script>
-        (function () {
-            const raw = localStorage.getItem("fmaero_auth");
-
-            if (!raw) {
-                window.location.replace("login.html");
-                return;
-            }
-
-            try {
-                const session = JSON.parse(raw);
-                if (!session || session.role !== "admin") {
-                    window.location.replace("login.html");
-                }
-            } catch {
-                localStorage.removeItem("fmaero_auth");
-                window.location.replace("login.html");
-            }
-        }());
-    </script>
 </head>
 <body>
     <div class="page">
@@ -395,7 +375,7 @@
                 <img class="company-inline-logo" src="./logo_company_1.png" alt="FMAERO Logo" onerror="this.src='./logo_company.jpeg'">
                 <div class="title-wrap">
                     <h1>FMAERO Smart Tracking System</h1>
-                    <p>Admin dashboard access is protected by local session authentication.</p>
+                    <p>Admin dashboard access is protected by Firebase Authentication and role-based checks.</p>
                 </div>
             </div>
             <button class="logout-btn" type="button" onclick="logout()">Logout</button>
@@ -437,7 +417,7 @@
             </article>
             <article class="info-card">
                 <span>Session Storage</span>
-                <strong>localStorage</strong>
+                <strong>Firebase Auth</strong>
             </article>
             <article class="info-card">
                 <span>Authentication</span>
@@ -474,8 +454,7 @@
 
         <section class="note-card">
             <p>
-                Admin login uses a protected local session and acts as the control point for worker registration.
-                Worker accounts continue to authenticate against Firebase Realtime Database via the login page.
+                Admin login now uses Firebase Authentication, while worker roles are validated from Realtime Database by authenticated user ID.
             </p>
         </section>
 
@@ -484,19 +463,22 @@
         </footer>
     </div>
 
-    <script>
-        const session = JSON.parse(localStorage.getItem("fmaero_auth") || "{}");
+    <script type="module">
+        import { guardPage, logoutToLogin } from "./page-auth.js";
+
         const sessionText = document.getElementById("adminSessionText");
 
-        if (sessionText && session.email) {
-            sessionText.textContent = `Signed in as ${session.email}.`;
-        }
+        guardPage(["admin"], {
+            onAuthorized(session) {
+                if (sessionText) {
+                    sessionText.textContent = `Signed in as ${session.profile.name || session.user.email}.`;
+                }
+            }
+        });
 
-        function logout() {
-            localStorage.removeItem("fmaero_auth");
-            localStorage.removeItem("userRole");
-            window.location.replace("login.html");
-        }
+        window.logout = function logout() {
+            return logoutToLogin();
+        };
     </script>
 </body>
 </html>

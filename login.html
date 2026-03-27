@@ -41,7 +41,9 @@
         linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
       color: var(--text);
       position: relative;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     body::before,
@@ -355,6 +357,10 @@
         grid-template-columns: 1fr;
       }
 
+      .login-card {
+        order: -1;
+      }
+
       .login-hero {
         min-height: 420px;
       }
@@ -370,27 +376,74 @@
         padding: 18px;
       }
 
+      .page-shell {
+        min-height: auto;
+        justify-content: flex-start;
+      }
+
       .login-hero {
         padding: 28px 22px;
         min-height: auto;
       }
 
       .hero-copy h2 {
-        font-size: 34px;
+        font-size: 30px;
       }
 
       .hero-panels {
         grid-template-columns: 1fr;
       }
+
+      .hero-panel:last-child {
+        display: none;
+      }
     }
 
     @media (max-width: 480px) {
+      .page-shell {
+        gap: 14px;
+      }
+
+      .login-layout {
+        gap: 14px;
+      }
+
       .login-card {
         padding: 28px 20px 24px;
       }
 
       .company-title {
         font-size: 24px;
+      }
+
+      .subtitle {
+        margin-bottom: 22px;
+      }
+
+      .login-hero {
+        padding: 22px 18px;
+      }
+
+      .hero-badge {
+        font-size: 11px;
+        padding: 8px 12px;
+      }
+
+      .hero-copy h2 {
+        font-size: 26px;
+      }
+
+      .hero-copy p {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .hero-panels {
+        gap: 10px;
+      }
+
+      .hero-panel {
+        padding: 14px;
       }
     }
   </style>
@@ -458,73 +511,88 @@
   </div>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getDatabase, get, push, ref, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    import { get, ref, remove, set, getDatabase } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { auth, db, firebaseConfig, initializeApp, getAuth, deleteApp } from "./firebase-client.js";
+    import { normalizeRole, getRouteForRole, waitForSession } from "./auth-utils.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyA9l6N0ZOB8c5X_WZfzluqW8E0Tl1C1X6U",
-      authDomain: "fmaero-smart-tracking-system.firebaseapp.com",
-      databaseURL: "https://fmaero-smart-tracking-system-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "fmaero-smart-tracking-system",
-      storageBucket: "fmaero-smart-tracking-system.firebasestorage.app",
-      messagingSenderId: "170664221165",
-      appId: "1:170664221165:web:034157d463c44387bd6fe4"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
     const loginForm = document.getElementById("loginForm");
-    const AUTH_STORAGE_KEY = "fmaero_auth";
-    const ADMIN_EMAIL = "admin@fmaero.com";
-    const ADMIN_PASSWORD = "admin123";
 
-    function normalizeRole(role) {
-      const normalized = String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+    async function findLegacyUser(email, password) {
+      const snapshot = await get(ref(db, "users"));
+      if (!snapshot.exists()) return null;
 
-      if (normalized === "manager") return "manager";
-      if (normalized === "storekeeper") return "storekeeper";
-      if (normalized === "sitesupervisor") return "siteSupervisor";
-      if (normalized === "supervisor") return "siteSupervisor";
+      let matchedUser = null;
+      snapshot.forEach((childSnapshot) => {
+        if (matchedUser) return;
 
-      return "";
-    }
+        const user = childSnapshot.val() || {};
+        const userEmail = String(user.email || "").trim().toLowerCase();
+        const userPassword = String(user.password || "").trim();
+        const role = normalizeRole(user.role);
 
-    function getRedirectPath(role) {
-      if (role === "admin") return "admin-dashboard.html";
-      if (role === "manager") return "index.html";
-      if (role === "storekeeper") return "index.html";
-      if (role === "siteSupervisor") return "index.html";
-      return "";
-    }
+        if (!childSnapshot.key || childSnapshot.key === user.uid) return;
+        if (!role) return;
 
-    window.registerWorker = async function registerWorker(name, email, password, role) {
-      const normalizedName = String(name || "").trim();
-      const normalizedEmail = String(email || "").trim().toLowerCase();
-      const normalizedPassword = String(password || "").trim();
-      const normalizedRole = String(role || "").trim();
-      const allowedRoles = new Set(["manager", "storekeeper", "siteSupervisor"]);
-
-      if (!normalizedName || !normalizedEmail || !normalizedPassword || !allowedRoles.has(normalizedRole)) {
-        throw new Error("Invalid worker data");
-      }
-
-      const usersRef = ref(db, "users");
-      const newUserRef = push(usersRef);
-
-      await set(newUserRef, {
-        name: normalizedName,
-        email: normalizedEmail,
-        password: normalizedPassword,
-        role: normalizedRole
+        if (userEmail === email && userPassword === password) {
+          matchedUser = {
+            id: childSnapshot.key,
+            name: String(user.name || "User").trim(),
+            email: userEmail,
+            role
+          };
+        }
       });
 
-      return newUserRef.key;
-    };
+      return matchedUser;
+    }
+
+    async function migrateLegacyUser(legacyUser, password) {
+      const appName = `legacy-migration-${Date.now()}`;
+      const tempApp = initializeApp(firebaseConfig, appName);
+      const tempAuth = getAuth(tempApp);
+      const tempDb = getDatabase(tempApp);
+      const userCredential = await createUserWithEmailAndPassword(tempAuth, legacyUser.email, password);
+      const migratedUid = userCredential.user.uid;
+
+      await set(ref(tempDb, `users/${migratedUid}`), {
+        name: legacyUser.name,
+        email: legacyUser.email,
+        role: legacyUser.role,
+        status: "active",
+        uid: migratedUid,
+        migratedFrom: legacyUser.id,
+        migratedAt: new Date().toISOString()
+      });
+
+      await signOut(tempAuth).catch(() => {});
+      await deleteApp(tempApp).catch(() => {});
+
+      try {
+        await remove(ref(db, `users/${legacyUser.id}`));
+      } catch (error) {
+        console.warn("Legacy worker record cleanup skipped.", error);
+      }
+
+      return migratedUid;
+    }
+
+    async function loginWithMigration(email, password) {
+      try {
+        return await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        const legacyUser = await findLegacyUser(email, password);
+        if (!legacyUser) {
+          throw error;
+        }
+
+        await migrateLegacyUser(legacyUser, password);
+        return signInWithEmailAndPassword(auth, email, password);
+      }
+    }
 
     window.login = async function login(event) {
-      if (event) {
-        event.preventDefault();
-      }
+      if (event) event.preventDefault();
 
       const email = document.getElementById("email").value.trim().toLowerCase();
       const password = document.getElementById("password").value.trim();
@@ -535,62 +603,15 @@
       }
 
       try {
-        if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-          localStorage.setItem("userRole", "admin");
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
-            userId: "admin-local",
-            name: "Administrator",
-            email: ADMIN_EMAIL,
-            role: "admin"
-          }));
+        await loginWithMigration(email, password);
+        const session = await waitForSession();
+        const redirectPath = getRouteForRole(session?.profile?.role);
 
-          window.location.href = "admin-dashboard.html";
+        if (!session?.profile?.role || !redirectPath) {
+          await signOut(auth).catch(() => {});
+          alert("Your account is missing an active role. Please contact administrator.");
           return;
         }
-
-        const usersSnapshot = await get(ref(db, "users"));
-
-        if (!usersSnapshot.exists()) {
-          alert("Invalid email or password");
-          return;
-        }
-
-        const usersData = usersSnapshot.val() || {};
-        let matchedUser = null;
-
-        Object.entries(usersData).some(([userId, user]) => {
-          const userEmail = String(user?.email || "").trim().toLowerCase();
-          const userPassword = String(user?.password || "").trim();
-          const normalizedRole = normalizeRole(user?.role);
-
-          if (userEmail === email && userPassword === password) {
-            matchedUser = {
-              id: userId,
-              name: user?.name || "",
-              email: userEmail,
-              role: normalizedRole
-            };
-            return true;
-          }
-
-          return false;
-        });
-
-        const redirectPath = getRedirectPath(matchedUser?.role);
-
-        if (!matchedUser || !redirectPath) {
-          console.warn("Worker login rejected. Check email, password, and role value in Firebase /users.");
-          alert("Invalid email or password");
-          return;
-        }
-
-        localStorage.setItem("userRole", matchedUser.role);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
-          userId: matchedUser.id,
-          name: matchedUser.name,
-          email: matchedUser.email,
-          role: matchedUser.role
-        }));
 
         window.location.href = redirectPath;
       } catch (error) {

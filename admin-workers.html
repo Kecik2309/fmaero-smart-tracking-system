@@ -539,26 +539,6 @@
       }
     }
   </style>
-  <script>
-    (function () {
-      const raw = localStorage.getItem("fmaero_auth");
-
-      if (!raw) {
-        window.location.replace("login.html");
-        return;
-      }
-
-      try {
-        const session = JSON.parse(raw);
-        if (!session || session.role !== "admin") {
-          window.location.replace("login.html");
-        }
-      } catch {
-        localStorage.removeItem("fmaero_auth");
-        window.location.replace("login.html");
-      }
-    }());
-  </script>
 </head>
 <body>
   <div class="page">
@@ -576,7 +556,7 @@
     <section class="hero-strip">
       <div class="hero-panel">
         <h2>Centralized Worker Control</h2>
-        <p>Manage staff access for manager, storekeeper, and site supervisor accounts from one admin workspace. Add workers, update credentials, and keep role access organized before they enter the inventory system.</p>
+        <p>Manage staff access for manager, storekeeper, and site supervisor accounts from one admin workspace. Add workers, update role assignments, and keep account access organized before they enter the inventory system.</p>
         <div class="hero-tags">
           <span class="hero-tag">Firebase Connected</span>
           <span class="hero-tag">Role-Based Access</span>
@@ -588,8 +568,8 @@
         <strong id="totalWorkersCount">0</strong>
       </div>
       <div class="summary-card">
-        <span>Password Missing</span>
-        <strong id="missingPasswordCount">0</strong>
+        <span>Inactive Workers</span>
+        <strong id="inactiveWorkersCount">0</strong>
       </div>
     </section>
 
@@ -597,6 +577,7 @@
       <section class="card form-card">
         <span class="section-kicker">Admin Form</span>
         <h2>Worker Form</h2>
+        <p class="field-hint">Add a new account, update worker details, or disable access without deleting the Auth account.</p>
 
         <input type="hidden" id="workerId">
 
@@ -616,7 +597,7 @@
             <input type="password" id="workerPassword" placeholder="Enter worker password">
             <button type="button" class="toggle-password-btn" data-target="workerPassword" aria-label="Show password">Show</button>
           </div>
-          <p id="passwordHint" class="field-hint">Password is required when adding a worker.</p>
+          <p id="passwordHint" class="field-hint">Temporary password is required when adding a worker. The worker can change it later using reset password.</p>
         </div>
 
         <div class="form-group">
@@ -641,6 +622,7 @@
         <div class="button-row">
           <button type="button" class="primary-btn" id="addWorkerBtn" onclick="addWorker()">Add Worker</button>
           <button type="button" class="primary-btn" id="updateWorkerBtn" onclick="updateWorker()" hidden>Update Worker</button>
+          <button type="button" class="secondary-btn" id="resetWorkerPasswordBtn" onclick="sendWorkerResetLink()" hidden>Send Reset Link</button>
           <button type="button" class="secondary-btn" onclick="resetForm()">Clear</button>
         </div>
 
@@ -681,31 +663,21 @@
 
   <div id="deleteModal" class="modal-backdrop" aria-hidden="true">
     <div class="modal-card">
-      <h3>Delete Worker</h3>
-      <p id="deleteModalMessage">Are you sure you want to delete this worker?</p>
+      <h3>Change Worker Access</h3>
+      <p id="deleteModalMessage">Are you sure you want to update this worker access?</p>
       <div class="modal-actions">
         <button type="button" class="secondary-btn" id="deleteModalCancelBtn">Cancel</button>
-        <button type="button" class="delete-btn" id="deleteModalConfirmBtn">Delete</button>
+        <button type="button" class="delete-btn" id="deleteModalConfirmBtn">Confirm</button>
       </div>
     </div>
   </div>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getDatabase, get, push, ref, remove, set, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    import { get, ref, set, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    import { createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { db, auth, firebaseConfig, initializeApp, getAuth, deleteApp } from "./firebase-client.js";
+    import { guardPage, logoutToLogin } from "./page-auth.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyA9l6N0ZOB8c5X_WZfzluqW8E0Tl1C1X6U",
-      authDomain: "fmaero-smart-tracking-system.firebaseapp.com",
-      databaseURL: "https://fmaero-smart-tracking-system-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "fmaero-smart-tracking-system",
-      storageBucket: "fmaero-smart-tracking-system.firebasestorage.app",
-      messagingSenderId: "170664221165",
-      appId: "1:170664221165:web:034157d463c44387bd6fe4"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
     const allowedRoles = new Set(["manager", "storekeeper", "siteSupervisor"]);
     const MIN_PASSWORD_LENGTH = 6;
     let workerRecords = [];
@@ -728,9 +700,18 @@
       statusMessage.className = `status-message${type ? ` ${type}` : ""}`;
     }
 
+    function setPasswordInputsDisabled(disabled) {
+      document.getElementById("workerPassword").disabled = disabled;
+      document.getElementById("workerConfirmPassword").disabled = disabled;
+      document.querySelectorAll(".toggle-password-btn").forEach((button) => {
+        button.disabled = disabled;
+      });
+    }
+
     function openDeleteModal(worker) {
       pendingDeleteWorker = worker;
-      document.getElementById("deleteModalMessage").textContent = `Delete ${worker.name || "this worker"} (${worker.email || "no email"})? This action cannot be undone.`;
+      const actionLabel = worker.status === "active" ? "disable access for" : "reactivate";
+      document.getElementById("deleteModalMessage").textContent = `Do you want to ${actionLabel} ${worker.name || "this worker"} (${worker.email || "no email"})?`;
       document.getElementById("deleteModal").classList.add("open");
       document.getElementById("deleteModal").setAttribute("aria-hidden", "false");
     }
@@ -745,13 +726,33 @@
       document.getElementById("workerId").value = "";
       document.getElementById("workerName").value = "";
       document.getElementById("workerEmail").value = "";
+      document.getElementById("workerEmail").disabled = false;
       document.getElementById("workerPassword").value = "";
       document.getElementById("workerConfirmPassword").value = "";
       document.getElementById("workerRole").value = "";
-      document.getElementById("passwordHint").textContent = "Password is required when adding a worker.";
+      document.getElementById("passwordHint").textContent = "Temporary password is required when adding a worker. The worker can change it later using reset password.";
       document.getElementById("confirmPasswordHint").textContent = "Confirmation must match the password above.";
       document.getElementById("addWorkerBtn").hidden = false;
       document.getElementById("updateWorkerBtn").hidden = true;
+      document.getElementById("resetWorkerPasswordBtn").hidden = true;
+      setPasswordInputsDisabled(false);
+    }
+
+    function enterEditMode(worker) {
+      document.getElementById("workerId").value = worker.id;
+      document.getElementById("workerName").value = worker.name || "";
+      document.getElementById("workerEmail").value = worker.email || "";
+      document.getElementById("workerEmail").disabled = true;
+      document.getElementById("workerPassword").value = "";
+      document.getElementById("workerConfirmPassword").value = "";
+      document.getElementById("workerRole").value = worker.role || "";
+      document.getElementById("passwordHint").textContent = "Password is managed through Firebase reset email after account creation.";
+      document.getElementById("confirmPasswordHint").textContent = "Use the reset link button if this worker needs a new password.";
+      document.getElementById("addWorkerBtn").hidden = true;
+      document.getElementById("updateWorkerBtn").hidden = false;
+      document.getElementById("resetWorkerPasswordBtn").hidden = false;
+      setPasswordInputsDisabled(true);
+      setStatus("Edit mode enabled. Update the worker details or send a reset link.", "success");
     }
 
     function validateWorkerInput(values, requirePassword = true) {
@@ -777,7 +778,7 @@
         return false;
       }
 
-      if (values.password || values.confirmPassword) {
+      if (requirePassword) {
         if (values.password.length < MIN_PASSWORD_LENGTH) {
           setStatus(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`, "error");
           return false;
@@ -814,16 +815,16 @@
       const tableBody = document.getElementById("workersTableBody");
       const emptyState = document.getElementById("emptyState");
       const totalWorkersCount = document.getElementById("totalWorkersCount");
-      const missingPasswordCount = document.getElementById("missingPasswordCount");
+      const inactiveWorkersCount = document.getElementById("inactiveWorkersCount");
       tableBody.innerHTML = "";
 
       if (totalWorkersCount) {
         totalWorkersCount.textContent = String(workerRecords.length);
       }
 
-      if (missingPasswordCount) {
-        const missingCount = workerRecords.filter((worker) => String(worker.password || "").trim() === "").length;
-        missingPasswordCount.textContent = String(missingCount);
+      if (inactiveWorkersCount) {
+        const inactiveCount = workerRecords.filter((worker) => worker.status !== "active").length;
+        inactiveWorkersCount.textContent = String(inactiveCount);
       }
 
       const filteredWorkers = workerRecords.filter((worker) => matchesFilters(worker));
@@ -836,37 +837,25 @@
       emptyState.hidden = true;
 
       filteredWorkers.forEach((worker) => {
-        const hasPassword = String(worker.password || "").trim() !== "";
+        const statusBadge = worker.status === "active"
+          ? '<span class="hero-tag">Active</span>'
+          : '<span class="warning-badge">Inactive</span>';
         const row = document.createElement("tr");
 
         row.innerHTML = `
           <td>${worker.name || "-"}</td>
           <td>${worker.email || "-"}</td>
-          <td>${worker.role || "-"}${hasPassword ? "" : '<span class="warning-badge">No password</span>'}</td>
+          <td>${worker.role || "-"} ${statusBadge}</td>
           <td>
             <div class="actions">
               <button type="button" class="edit-btn" data-id="${worker.id}">Edit</button>
-              <button type="button" class="delete-btn" data-id="${worker.id}">Delete</button>
+              <button type="button" class="delete-btn" data-id="${worker.id}">${worker.status === "active" ? "Disable" : "Activate"}</button>
             </div>
           </td>
         `;
 
         row.querySelector(".edit-btn").addEventListener("click", () => {
-          document.getElementById("workerId").value = worker.id;
-          document.getElementById("workerName").value = worker.name || "";
-          document.getElementById("workerEmail").value = worker.email || "";
-          document.getElementById("workerPassword").value = "";
-          document.getElementById("workerConfirmPassword").value = "";
-          document.getElementById("workerRole").value = worker.role || "";
-          document.getElementById("passwordHint").textContent = hasPassword
-            ? "Leave password empty to keep the current password, or enter a new one to replace it."
-            : "This worker has no saved password yet. Enter one now before updating.";
-          document.getElementById("confirmPasswordHint").textContent = hasPassword
-            ? "If you enter a new password, confirm it here before updating."
-            : "Confirm the new password before updating this worker.";
-          document.getElementById("addWorkerBtn").hidden = true;
-          document.getElementById("updateWorkerBtn").hidden = false;
-          setStatus("Edit mode enabled. Update the worker details.", "success");
+          enterEditMode(worker);
         });
 
         row.querySelector(".delete-btn").addEventListener("click", () => {
@@ -891,6 +880,20 @@
       });
     }
 
+    async function createWorkerAuthAccount(email, password) {
+      const appName = `worker-create-${Date.now()}`;
+      const tempApp = initializeApp(firebaseConfig, appName);
+      const tempAuth = getAuth(tempApp);
+
+      try {
+        const credential = await createUserWithEmailAndPassword(tempAuth, email, password);
+        await signOut(tempAuth).catch(() => {});
+        return credential.user.uid;
+      } finally {
+        await deleteApp(tempApp).catch(() => {});
+      }
+    }
+
     window.addWorker = async function addWorker() {
       const values = readFormValues();
 
@@ -904,14 +907,15 @@
           return;
         }
 
-        const usersRef = ref(db, "users");
-        const newUserRef = push(usersRef);
+        const uid = await createWorkerAuthAccount(values.email, values.password);
 
-        await set(newUserRef, {
+        await set(ref(db, `users/${uid}`), {
+          uid,
           name: values.name,
           email: values.email,
-          password: values.password,
-          role: values.role
+          role: values.role,
+          status: "active",
+          createdAt: new Date().toISOString()
         });
 
         setStatus("Worker added successfully.", "success");
@@ -919,7 +923,7 @@
         await window.loadWorkers();
       } catch (error) {
         console.error("Add worker error:", error);
-        setStatus("Failed to add worker.", "error");
+        setStatus(error?.code === "auth/email-already-in-use" ? "Email already exists in Firebase Auth." : "Failed to add worker.", "error");
       }
     };
 
@@ -932,20 +936,26 @@
 
         if (!snapshot.exists()) {
           emptyState.hidden = false;
+          renderWorkersTable();
           return;
         }
 
         snapshot.forEach((childSnapshot) => {
           const worker = childSnapshot.val() || {};
+          if (!allowedRoles.has(String(worker.role || "").trim()) && String(worker.role || "").trim() !== "admin") {
+            return;
+          }
+
           workerRecords.push({
             id: childSnapshot.key,
             name: worker.name || "",
             email: worker.email || "",
-            password: worker.password || "",
-            role: worker.role || ""
+            role: worker.role || "",
+            status: String(worker.status || "active").trim().toLowerCase()
           });
         });
 
+        workerRecords = workerRecords.filter((worker) => worker.role !== "admin");
         renderWorkersTable();
       } catch (error) {
         console.error("Load workers error:", error);
@@ -967,22 +977,12 @@
       }
 
       try {
-        if (await emailExists(values.email, values.id)) {
-          setStatus("Email already exists. Use a different worker email.", "error");
-          return;
-        }
-
-        const updateData = {
+        await update(ref(db, `users/${values.id}`), {
           name: values.name,
-          email: values.email,
-          role: values.role
-        };
+          role: values.role,
+          updatedAt: new Date().toISOString()
+        });
 
-        if (values.password) {
-          updateData.password = values.password;
-        }
-
-        await update(ref(db, `users/${values.id}`), updateData);
         setStatus("Worker updated successfully.", "success");
         resetFormState();
         await window.loadWorkers();
@@ -992,15 +992,42 @@
       }
     };
 
+    window.sendWorkerResetLink = async function sendWorkerResetLink() {
+      const values = readFormValues();
+      if (!values.email) {
+        setStatus("Select a worker first.", "error");
+        return;
+      }
+
+      try {
+        await sendPasswordResetEmail(auth, values.email);
+        setStatus("Password reset link sent successfully.", "success");
+      } catch (error) {
+        console.error("Reset email error:", error);
+        setStatus("Failed to send password reset link.", "error");
+      }
+    };
+
     window.deleteWorker = async function deleteWorker(workerId) {
       if (!workerId) {
         setStatus("Invalid worker selected.", "error");
         return;
       }
 
+      const worker = workerRecords.find((item) => item.id === workerId);
+      if (!worker) {
+        setStatus("Worker not found.", "error");
+        return;
+      }
+
+      const nextStatus = worker.status === "active" ? "disabled" : "active";
+
       try {
-        await remove(ref(db, `users/${workerId}`));
-        setStatus("Worker deleted successfully.", "success");
+        await update(ref(db, `users/${workerId}`), {
+          status: nextStatus,
+          updatedAt: new Date().toISOString()
+        });
+      setStatus(`Worker access ${nextStatus === "active" ? "activated" : "disabled"} successfully.`, "success");
 
         if (document.getElementById("workerId").value === workerId) {
           resetFormState();
@@ -1008,8 +1035,8 @@
 
         await window.loadWorkers();
       } catch (error) {
-        console.error("Delete worker error:", error);
-        setStatus("Failed to delete worker.", "error");
+        console.error("Worker status update error:", error);
+        setStatus("Failed to update worker access.", "error");
       }
     };
 
@@ -1019,9 +1046,7 @@
     };
 
     window.logout = function logout() {
-      localStorage.removeItem("fmaero_auth");
-      localStorage.removeItem("userRole");
-      window.location.replace("login.html");
+      return logoutToLogin();
     };
 
     document.querySelectorAll(".toggle-password-btn").forEach((button) => {
@@ -1051,7 +1076,9 @@
       }
     });
 
-    window.loadWorkers();
+    await guardPage(["admin"]);
+    resetFormState();
+    await window.loadWorkers();
   </script>
 </body>
 </html>
