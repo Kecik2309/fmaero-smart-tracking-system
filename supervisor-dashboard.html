@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FMAERO Smart Tracking System - Site Supervisor Dashboard</title>
+  <style>
+    :root {
+      --bg: #edf4f7;
+      --card: rgba(255, 252, 247, 0.9);
+      --text: #17324d;
+      --muted: #6b7f92;
+      --border: #cad8e2;
+      --primary: #1b5c85;
+      --primary-dark: #144767;
+      --accent: #deedf3;
+      --accent-text: #37697c;
+      --accent-border: #a8c8d5;
+      --shadow: 0 20px 48px rgba(11, 31, 52, 0.14);
+      --shadow-soft: 0 10px 30px rgba(11, 31, 52, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: url("./logo_company_1.png");
+      background-repeat: no-repeat;
+      background-position: 84% 16%;
+      background-size: min(32vw, 340px);
+      opacity: 0.04;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(circle at 12% 10%, rgba(27, 92, 133, 0.14), transparent 26%),
+        radial-gradient(circle at 88% 88%, rgba(109, 165, 190, 0.12), transparent 24%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding: 18px 20px;
+      border: 1px solid rgba(202, 216, 226, 0.92);
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(240,247,250,0.9));
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .company-inline-logo {
+      width: 94px;
+      height: 94px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .title h1 {
+      margin: 0 0 6px;
+      color: var(--primary);
+      font-size: 38px;
+      letter-spacing: -0.03em;
+    }
+
+    .title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .logout-btn {
+      border: none;
+      border-radius: 14px;
+      padding: 13px 20px;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 12px 24px rgba(27, 92, 133, 0.22);
+    }
+
+    .logout-btn:hover { background: var(--primary-dark); }
+
+    .hero-strip {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(160px, 1fr));
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    .hero-panel,
+    .summary-card {
+      border: 1px solid rgba(202, 216, 226, 0.92);
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(240,247,250,0.88));
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-panel { padding: 22px 24px; }
+
+    .hero-panel h2 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      color: var(--primary);
+    }
+
+    .hero-panel p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .hero-tags {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--accent-text);
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--accent-border);
+    }
+
+    .summary-card { padding: 18px 20px; }
+
+    .summary-card span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .summary-card strong {
+      font-size: 30px;
+      line-height: 1;
+      color: var(--primary);
+    }
+
+    .hero,
+    .card,
+    .cta-card {
+      background: var(--card);
+      border: 1px solid rgba(202, 216, 226, 0.94);
+      border-radius: 24px;
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      margin-bottom: 22px;
+      padding: 28px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(241,247,250,0.92) 100%);
+    }
+
+    .hero h2 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    .card { padding: 24px; }
+
+    .card span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .card strong {
+      font-size: 24px;
+      color: var(--primary);
+    }
+
+    .cta-card { padding: 24px; }
+
+    .section-kicker {
+      display: inline-flex;
+      margin-bottom: 10px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #075985;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cta-card h3 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      color: var(--primary);
+    }
+
+    .cta-card p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .action-link {
+      display: inline-block;
+      padding: 12px 18px;
+      border-radius: 14px;
+      background: var(--primary);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: 0 12px 22px rgba(27, 92, 133, 0.16);
+    }
+
+    .action-link:hover { background: var(--primary-dark); }
+
+    .app-footer {
+      margin-top: 24px;
+      padding: 14px 18px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.78);
+      color: #475569;
+      font-size: 13px;
+      text-align: center;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .app-footer p { margin: 0; }
+
+    @media (max-width: 640px) {
+      .hero-strip { grid-template-columns: 1fr; }
+      .topbar { flex-direction: column; align-items: flex-start; }
+      .brand-row { align-items: flex-start; }
+      .company-inline-logo { width: 74px; height: 74px; }
+      .title h1 { font-size: 31px; }
+      .logout-btn { width: 100%; }
+    }
+  </style>
+  <script>
+    (function () {
+      const raw = localStorage.getItem("fmaero_auth");
+      if (!raw) {
+        window.location.replace("login.html");
+        return;
+      }
+      try {
+        const session = JSON.parse(raw);
+        if (!session || session.role !== "siteSupervisor") {
+          window.location.replace("login.html");
+        }
+      } catch {
+        localStorage.removeItem("fmaero_auth");
+        window.location.replace("login.html");
+      }
+    }());
+  </script>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand-row">
+        <img class="company-inline-logo" src="./logo_company_1.png" alt="FMAERO Logo" onerror="this.src='./logo_company.jpeg'">
+        <div class="title">
+          <h1>FMAERO Smart Tracking System</h1>
+          <p>Site supervisor dashboard for monitoring and operational review.</p>
+        </div>
+      </div>
+      <button type="button" class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <section class="hero-strip">
+      <div class="hero-panel">
+        <h2>Site Supervisor View</h2>
+        <p>Monitor activity flow, keep visibility over site-side inventory usage, and move into the main inventory dashboard for review and coordination.</p>
+        <div class="hero-tags">
+          <span class="hero-tag">Supervisor Access</span>
+          <span class="hero-tag">Site Monitoring</span>
+          <span class="hero-tag">Protected Session</span>
+        </div>
+      </div>
+      <div class="summary-card">
+        <span>Role</span>
+        <strong>Supervisor</strong>
+      </div>
+      <div class="summary-card">
+        <span>Session</span>
+        <strong>Active</strong>
+      </div>
+    </section>
+
+    <section class="hero">
+      <h2>Site Supervisor Workspace</h2>
+      <p id="sessionName">Signed in as site supervisor.</p>
+    </section>
+
+    <div class="grid">
+      <div class="card">
+        <span>Primary Access</span>
+        <strong>Site Monitoring</strong>
+      </div>
+      <div class="card">
+        <span>Workflow</span>
+        <strong>Operational Review</strong>
+      </div>
+      <div class="card">
+        <span>Authentication</span>
+        <strong>Protected</strong>
+      </div>
+    </div>
+
+    <section class="cta-card">
+      <span class="section-kicker">Quick Access</span>
+      <h3>Open Inventory Dashboard</h3>
+      <p>Go into the main inventory page to review stock activity, scanned items, and overall inventory records from the supervisor role flow.</p>
+      <a class="action-link" href="index.html">Open Inventory Dashboard</a>
+    </section>
+
+    <footer class="app-footer">
+      <p>&copy; 2026 FMAERO Smart Tracking System. All rights reserved.</p>
+    </footer>
+  </div>
+
+  <script>
+    const session = JSON.parse(localStorage.getItem("fmaero_auth") || "{}");
+    const sessionName = document.getElementById("sessionName");
+    if (sessionName && session.name) {
+      sessionName.textContent = `Signed in as ${session.name}.`;
+    } else if (sessionName && session.email) {
+      sessionName.textContent = `Signed in as ${session.email}.`;
+    }
+
+    function logout() {
+      localStorage.removeItem("fmaero_auth");
+      localStorage.removeItem("userRole");
+      window.location.replace("login.html");
+    }
+  </script>
+</body>
+</html>

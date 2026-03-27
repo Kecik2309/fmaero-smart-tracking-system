@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FMAERO Smart Tracking System - Worker Management</title>
+  <style>
+    :root {
+      --bg: #edf4f7;
+      --card: rgba(255, 252, 247, 0.9);
+      --text: #17324d;
+      --muted: #6b7f92;
+      --border: #cad8e2;
+      --primary: #1b5c85;
+      --primary-dark: #144767;
+      --primary-soft: #f3e3bf;
+      --primary-soft-text: #8f5c13;
+      --primary-soft-border: #e7c880;
+      --success-soft: #dff1e4;
+      --danger: #b91c1c;
+      --danger-dark: #991b1b;
+      --warning: #c07a1d;
+      --shadow: 0 20px 50px rgba(11, 31, 52, 0.14);
+      --shadow-soft: 0 10px 30px rgba(11, 31, 52, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: url("./logo_company_1.png");
+      background-repeat: no-repeat;
+      background-position: 84% 16%;
+      background-size: min(32vw, 340px);
+      opacity: 0.04;
+      filter: saturate(0.8);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(circle at 12% 10%, rgba(27, 92, 133, 0.14), transparent 26%),
+        radial-gradient(circle at 88% 88%, rgba(216, 155, 60, 0.1), transparent 24%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding: 18px 20px;
+      border: 1px solid rgba(202, 216, 226, 0.92);
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,247,233,0.9));
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .company-inline-logo {
+      width: 94px;
+      height: 94px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .title-block h1 {
+      margin: 0 0 6px;
+      font-size: 38px;
+      letter-spacing: -0.03em;
+      color: var(--primary);
+    }
+
+    .title-block p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .logout-btn {
+      border: none;
+      border-radius: 14px;
+      padding: 13px 20px;
+      box-shadow: 0 12px 24px rgba(27, 92, 133, 0.22);
+      background: var(--primary);
+      color: #ffffff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .logout-btn:hover {
+      background: var(--primary-dark);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .hero-strip {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(160px, 1fr));
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    .hero-panel,
+    .summary-card {
+      border: 1px solid rgba(202, 216, 226, 0.92);
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,244,236,0.88));
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-panel {
+      padding: 22px 24px;
+    }
+
+    .hero-panel h2 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      color: var(--primary);
+    }
+
+    .hero-panel p {
+      margin: 0;
+      max-width: 680px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .hero-tags {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary-soft-text);
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--primary-soft-border);
+    }
+
+    .summary-card {
+      padding: 18px 20px;
+    }
+
+    .summary-card span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .summary-card strong {
+      font-size: 30px;
+      line-height: 1;
+      color: var(--primary);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(202, 216, 226, 0.94);
+      border-radius: 24px;
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow);
+    }
+
+    .form-card {
+      padding: 26px;
+      position: sticky;
+      top: 24px;
+    }
+
+    .table-card {
+      padding: 26px;
+      overflow-x: auto;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 26px;
+      letter-spacing: -0.02em;
+      color: #12253f;
+    }
+
+    .section-kicker {
+      display: inline-flex;
+      margin-bottom: 10px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 14px 15px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      font-size: 15px;
+      background: rgba(255,255,255,0.9);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(27, 92, 133, 0.12);
+    }
+
+    .password-field {
+      position: relative;
+    }
+
+    .password-field input {
+      padding-right: 48px;
+    }
+
+    .toggle-password-btn {
+      position: absolute;
+      top: 50%;
+      right: 12px;
+      transform: translateY(-50%);
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .toggle-password-btn:hover {
+      color: var(--primary);
+    }
+
+    input[type="password"]::-ms-reveal,
+    input[type="password"]::-ms-clear {
+      display: none;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    button {
+      border: none;
+      border-radius: 14px;
+      padding: 13px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+
+    .primary-btn {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 12px 22px rgba(27, 92, 133, 0.18);
+    }
+
+    .primary-btn:hover {
+      background: var(--primary-dark);
+      transform: translateY(-1px);
+    }
+
+    .secondary-btn {
+      background: #e2e8f0;
+      color: var(--text);
+    }
+
+    .secondary-btn:hover {
+      background: #cbd5e1;
+    }
+
+    .status-message {
+      min-height: 22px;
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .status-message.success {
+      color: #166534;
+    }
+
+    .status-message.error {
+      color: var(--danger);
+    }
+
+    .field-hint {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .table-toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) 220px;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+      background: rgba(255,255,255,0.4);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      padding: 18px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      font-size: 14px;
+      vertical-align: middle;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: rgba(239, 246, 255, 0.72);
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+
+    .edit-btn {
+      background: #6b7280;
+      color: #ffffff;
+      min-width: 74px;
+    }
+
+    .delete-btn {
+      background: var(--danger);
+      color: #ffffff;
+      min-width: 92px;
+    }
+
+    .edit-btn:hover {
+      background: #4b5563;
+    }
+
+    .delete-btn:hover {
+      background: var(--danger-dark);
+    }
+
+    .empty-text {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .warning-badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 11px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.45);
+      z-index: 1000;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .modal-card h3 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      color: var(--text);
+    }
+
+    .modal-card p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .app-footer {
+      margin-top: 24px;
+      padding: 14px 18px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.78);
+      color: #475569;
+      font-size: 13px;
+      text-align: center;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .app-footer p {
+      margin: 0;
+    }
+
+    @media (max-width: 900px) {
+      .hero-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .form-card {
+        position: static;
+      }
+
+      .table-toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .brand-row {
+        align-items: flex-start;
+      }
+
+      .company-inline-logo {
+        width: 74px;
+        height: 74px;
+      }
+
+      .title-block h1 {
+        font-size: 31px;
+      }
+    }
+  </style>
+  <script>
+    (function () {
+      const raw = localStorage.getItem("fmaero_auth");
+
+      if (!raw) {
+        window.location.replace("login.html");
+        return;
+      }
+
+      try {
+        const session = JSON.parse(raw);
+        if (!session || session.role !== "admin") {
+          window.location.replace("login.html");
+        }
+      } catch {
+        localStorage.removeItem("fmaero_auth");
+        window.location.replace("login.html");
+      }
+    }());
+  </script>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand-row">
+        <img class="company-inline-logo" src="./logo_company_1.png" alt="FMAERO Logo" onerror="this.src='./logo_company.jpeg'">
+        <div class="title-block">
+          <h1>FMAERO Smart Tracking System</h1>
+          <p>Admin Worker Management</p>
+        </div>
+      </div>
+      <button type="button" class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <section class="hero-strip">
+      <div class="hero-panel">
+        <h2>Centralized Worker Control</h2>
+        <p>Manage staff access for manager, storekeeper, and site supervisor accounts from one admin workspace. Add workers, update credentials, and keep role access organized before they enter the inventory system.</p>
+        <div class="hero-tags">
+          <span class="hero-tag">Firebase Connected</span>
+          <span class="hero-tag">Role-Based Access</span>
+          <span class="hero-tag">Secure Worker Setup</span>
+        </div>
+      </div>
+      <div class="summary-card">
+        <span>Total Workers</span>
+        <strong id="totalWorkersCount">0</strong>
+      </div>
+      <div class="summary-card">
+        <span>Password Missing</span>
+        <strong id="missingPasswordCount">0</strong>
+      </div>
+    </section>
+
+    <div class="layout">
+      <section class="card form-card">
+        <span class="section-kicker">Admin Form</span>
+        <h2>Worker Form</h2>
+
+        <input type="hidden" id="workerId">
+
+        <div class="form-group">
+          <label for="workerName">Name</label>
+          <input type="text" id="workerName" placeholder="Enter worker name">
+        </div>
+
+        <div class="form-group">
+          <label for="workerEmail">Email</label>
+          <input type="email" id="workerEmail" placeholder="Enter worker email">
+        </div>
+
+        <div class="form-group">
+          <label for="workerPassword">Password</label>
+          <div class="password-field">
+            <input type="password" id="workerPassword" placeholder="Enter worker password">
+            <button type="button" class="toggle-password-btn" data-target="workerPassword" aria-label="Show password">Show</button>
+          </div>
+          <p id="passwordHint" class="field-hint">Password is required when adding a worker.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="workerConfirmPassword">Confirm Password</label>
+          <div class="password-field">
+            <input type="password" id="workerConfirmPassword" placeholder="Re-enter worker password">
+            <button type="button" class="toggle-password-btn" data-target="workerConfirmPassword" aria-label="Show confirmation password">Show</button>
+          </div>
+          <p id="confirmPasswordHint" class="field-hint">Confirmation must match the password above.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="workerRole">Role</label>
+          <select id="workerRole">
+            <option value="">Select role</option>
+            <option value="manager">manager</option>
+            <option value="storekeeper">storekeeper</option>
+            <option value="siteSupervisor">siteSupervisor</option>
+          </select>
+        </div>
+
+        <div class="button-row">
+          <button type="button" class="primary-btn" id="addWorkerBtn" onclick="addWorker()">Add Worker</button>
+          <button type="button" class="primary-btn" id="updateWorkerBtn" onclick="updateWorker()" hidden>Update Worker</button>
+          <button type="button" class="secondary-btn" onclick="resetForm()">Clear</button>
+        </div>
+
+        <div id="statusMessage" class="status-message"></div>
+      </section>
+
+      <section class="card table-card">
+        <span class="section-kicker">Directory</span>
+        <h2>Worker List</h2>
+        <div class="table-toolbar">
+          <input type="text" id="workerSearchInput" placeholder="Search by name or email">
+          <select id="workerRoleFilter">
+            <option value="all">All roles</option>
+            <option value="manager">manager</option>
+            <option value="storekeeper">storekeeper</option>
+            <option value="siteSupervisor">siteSupervisor</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="workersTableBody"></tbody>
+        </table>
+        <p id="emptyState" class="empty-text">No workers found.</p>
+      </section>
+    </div>
+
+    <footer class="app-footer">
+      <p>&copy; 2026 FMAERO Smart Tracking System. All rights reserved.</p>
+    </footer>
+  </div>
+
+  <div id="deleteModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Delete Worker</h3>
+      <p id="deleteModalMessage">Are you sure you want to delete this worker?</p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="deleteModalCancelBtn">Cancel</button>
+        <button type="button" class="delete-btn" id="deleteModalConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, get, push, ref, remove, set, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA9l6N0ZOB8c5X_WZfzluqW8E0Tl1C1X6U",
+      authDomain: "fmaero-smart-tracking-system.firebaseapp.com",
+      databaseURL: "https://fmaero-smart-tracking-system-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "fmaero-smart-tracking-system",
+      storageBucket: "fmaero-smart-tracking-system.firebasestorage.app",
+      messagingSenderId: "170664221165",
+      appId: "1:170664221165:web:034157d463c44387bd6fe4"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const allowedRoles = new Set(["manager", "storekeeper", "siteSupervisor"]);
+    const MIN_PASSWORD_LENGTH = 6;
+    let workerRecords = [];
+    let pendingDeleteWorker = null;
+
+    function readFormValues() {
+      return {
+        id: document.getElementById("workerId").value.trim(),
+        name: document.getElementById("workerName").value.trim(),
+        email: document.getElementById("workerEmail").value.trim().toLowerCase(),
+        password: document.getElementById("workerPassword").value.trim(),
+        confirmPassword: document.getElementById("workerConfirmPassword").value.trim(),
+        role: document.getElementById("workerRole").value.trim()
+      };
+    }
+
+    function setStatus(message, type = "") {
+      const statusMessage = document.getElementById("statusMessage");
+      statusMessage.textContent = message;
+      statusMessage.className = `status-message${type ? ` ${type}` : ""}`;
+    }
+
+    function openDeleteModal(worker) {
+      pendingDeleteWorker = worker;
+      document.getElementById("deleteModalMessage").textContent = `Delete ${worker.name || "this worker"} (${worker.email || "no email"})? This action cannot be undone.`;
+      document.getElementById("deleteModal").classList.add("open");
+      document.getElementById("deleteModal").setAttribute("aria-hidden", "false");
+    }
+
+    function closeDeleteModal() {
+      pendingDeleteWorker = null;
+      document.getElementById("deleteModal").classList.remove("open");
+      document.getElementById("deleteModal").setAttribute("aria-hidden", "true");
+    }
+
+    function resetFormState() {
+      document.getElementById("workerId").value = "";
+      document.getElementById("workerName").value = "";
+      document.getElementById("workerEmail").value = "";
+      document.getElementById("workerPassword").value = "";
+      document.getElementById("workerConfirmPassword").value = "";
+      document.getElementById("workerRole").value = "";
+      document.getElementById("passwordHint").textContent = "Password is required when adding a worker.";
+      document.getElementById("confirmPasswordHint").textContent = "Confirmation must match the password above.";
+      document.getElementById("addWorkerBtn").hidden = false;
+      document.getElementById("updateWorkerBtn").hidden = true;
+    }
+
+    function validateWorkerInput(values, requirePassword = true) {
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!values.name || !values.email || !values.role) {
+        setStatus("Please complete all required fields.", "error");
+        return false;
+      }
+
+      if (!emailPattern.test(values.email)) {
+        setStatus("Please enter a valid email address.", "error");
+        return false;
+      }
+
+      if (requirePassword && !values.password) {
+        setStatus("Password is required.", "error");
+        return false;
+      }
+
+      if (requirePassword && !values.confirmPassword) {
+        setStatus("Confirm password is required.", "error");
+        return false;
+      }
+
+      if (values.password || values.confirmPassword) {
+        if (values.password.length < MIN_PASSWORD_LENGTH) {
+          setStatus(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`, "error");
+          return false;
+        }
+
+        if (values.password !== values.confirmPassword) {
+          setStatus("Password and confirm password do not match.", "error");
+          return false;
+        }
+      }
+
+      if (!allowedRoles.has(values.role)) {
+        setStatus("Invalid role selected.", "error");
+        return false;
+      }
+
+      return true;
+    }
+
+    function matchesFilters(worker) {
+      const searchValue = document.getElementById("workerSearchInput").value.trim().toLowerCase();
+      const roleFilterValue = document.getElementById("workerRoleFilter").value;
+      const workerName = String(worker.name || "").toLowerCase();
+      const workerEmail = String(worker.email || "").toLowerCase();
+      const workerRole = String(worker.role || "").trim();
+
+      const matchesSearch = !searchValue || workerName.includes(searchValue) || workerEmail.includes(searchValue);
+      const matchesRole = roleFilterValue === "all" || workerRole === roleFilterValue;
+
+      return matchesSearch && matchesRole;
+    }
+
+    function renderWorkersTable() {
+      const tableBody = document.getElementById("workersTableBody");
+      const emptyState = document.getElementById("emptyState");
+      const totalWorkersCount = document.getElementById("totalWorkersCount");
+      const missingPasswordCount = document.getElementById("missingPasswordCount");
+      tableBody.innerHTML = "";
+
+      if (totalWorkersCount) {
+        totalWorkersCount.textContent = String(workerRecords.length);
+      }
+
+      if (missingPasswordCount) {
+        const missingCount = workerRecords.filter((worker) => String(worker.password || "").trim() === "").length;
+        missingPasswordCount.textContent = String(missingCount);
+      }
+
+      const filteredWorkers = workerRecords.filter((worker) => matchesFilters(worker));
+
+      if (!filteredWorkers.length) {
+        emptyState.hidden = false;
+        return;
+      }
+
+      emptyState.hidden = true;
+
+      filteredWorkers.forEach((worker) => {
+        const hasPassword = String(worker.password || "").trim() !== "";
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>${worker.name || "-"}</td>
+          <td>${worker.email || "-"}</td>
+          <td>${worker.role || "-"}${hasPassword ? "" : '<span class="warning-badge">No password</span>'}</td>
+          <td>
+            <div class="actions">
+              <button type="button" class="edit-btn" data-id="${worker.id}">Edit</button>
+              <button type="button" class="delete-btn" data-id="${worker.id}">Delete</button>
+            </div>
+          </td>
+        `;
+
+        row.querySelector(".edit-btn").addEventListener("click", () => {
+          document.getElementById("workerId").value = worker.id;
+          document.getElementById("workerName").value = worker.name || "";
+          document.getElementById("workerEmail").value = worker.email || "";
+          document.getElementById("workerPassword").value = "";
+          document.getElementById("workerConfirmPassword").value = "";
+          document.getElementById("workerRole").value = worker.role || "";
+          document.getElementById("passwordHint").textContent = hasPassword
+            ? "Leave password empty to keep the current password, or enter a new one to replace it."
+            : "This worker has no saved password yet. Enter one now before updating.";
+          document.getElementById("confirmPasswordHint").textContent = hasPassword
+            ? "If you enter a new password, confirm it here before updating."
+            : "Confirm the new password before updating this worker.";
+          document.getElementById("addWorkerBtn").hidden = true;
+          document.getElementById("updateWorkerBtn").hidden = false;
+          setStatus("Edit mode enabled. Update the worker details.", "success");
+        });
+
+        row.querySelector(".delete-btn").addEventListener("click", () => {
+          openDeleteModal(worker);
+        });
+
+        tableBody.appendChild(row);
+      });
+    }
+
+    async function emailExists(email, excludeWorkerId = "") {
+      const snapshot = await get(ref(db, "users"));
+      if (!snapshot.exists()) return false;
+
+      const users = snapshot.val() || {};
+      return Object.entries(users).some(([userId, user]) => {
+        if (excludeWorkerId && userId === excludeWorkerId) {
+          return false;
+        }
+
+        return String(user?.email || "").trim().toLowerCase() === email;
+      });
+    }
+
+    window.addWorker = async function addWorker() {
+      const values = readFormValues();
+
+      if (!validateWorkerInput(values, true)) {
+        return;
+      }
+
+      try {
+        if (await emailExists(values.email)) {
+          setStatus("Email already exists. Use a different worker email.", "error");
+          return;
+        }
+
+        const usersRef = ref(db, "users");
+        const newUserRef = push(usersRef);
+
+        await set(newUserRef, {
+          name: values.name,
+          email: values.email,
+          password: values.password,
+          role: values.role
+        });
+
+        setStatus("Worker added successfully.", "success");
+        resetFormState();
+        await window.loadWorkers();
+      } catch (error) {
+        console.error("Add worker error:", error);
+        setStatus("Failed to add worker.", "error");
+      }
+    };
+
+    window.loadWorkers = async function loadWorkers() {
+      const emptyState = document.getElementById("emptyState");
+      workerRecords = [];
+
+      try {
+        const snapshot = await get(ref(db, "users"));
+
+        if (!snapshot.exists()) {
+          emptyState.hidden = false;
+          return;
+        }
+
+        snapshot.forEach((childSnapshot) => {
+          const worker = childSnapshot.val() || {};
+          workerRecords.push({
+            id: childSnapshot.key,
+            name: worker.name || "",
+            email: worker.email || "",
+            password: worker.password || "",
+            role: worker.role || ""
+          });
+        });
+
+        renderWorkersTable();
+      } catch (error) {
+        console.error("Load workers error:", error);
+        emptyState.hidden = false;
+        setStatus("Failed to load workers.", "error");
+      }
+    };
+
+    window.updateWorker = async function updateWorker() {
+      const values = readFormValues();
+
+      if (!values.id) {
+        setStatus("Select a worker to update.", "error");
+        return;
+      }
+
+      if (!validateWorkerInput(values, false)) {
+        return;
+      }
+
+      try {
+        if (await emailExists(values.email, values.id)) {
+          setStatus("Email already exists. Use a different worker email.", "error");
+          return;
+        }
+
+        const updateData = {
+          name: values.name,
+          email: values.email,
+          role: values.role
+        };
+
+        if (values.password) {
+          updateData.password = values.password;
+        }
+
+        await update(ref(db, `users/${values.id}`), updateData);
+        setStatus("Worker updated successfully.", "success");
+        resetFormState();
+        await window.loadWorkers();
+      } catch (error) {
+        console.error("Update worker error:", error);
+        setStatus("Failed to update worker.", "error");
+      }
+    };
+
+    window.deleteWorker = async function deleteWorker(workerId) {
+      if (!workerId) {
+        setStatus("Invalid worker selected.", "error");
+        return;
+      }
+
+      try {
+        await remove(ref(db, `users/${workerId}`));
+        setStatus("Worker deleted successfully.", "success");
+
+        if (document.getElementById("workerId").value === workerId) {
+          resetFormState();
+        }
+
+        await window.loadWorkers();
+      } catch (error) {
+        console.error("Delete worker error:", error);
+        setStatus("Failed to delete worker.", "error");
+      }
+    };
+
+    window.resetForm = function resetForm() {
+      resetFormState();
+      setStatus("");
+    };
+
+    window.logout = function logout() {
+      localStorage.removeItem("fmaero_auth");
+      localStorage.removeItem("userRole");
+      window.location.replace("login.html");
+    };
+
+    document.querySelectorAll(".toggle-password-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        const targetId = button.getAttribute("data-target");
+        const input = document.getElementById(targetId);
+        if (!input) return;
+
+        const isHidden = input.type === "password";
+        input.type = isHidden ? "text" : "password";
+        button.textContent = isHidden ? "Hide" : "Show";
+      });
+    });
+
+    document.getElementById("workerSearchInput").addEventListener("input", renderWorkersTable);
+    document.getElementById("workerRoleFilter").addEventListener("change", renderWorkersTable);
+    document.getElementById("deleteModalCancelBtn").addEventListener("click", closeDeleteModal);
+    document.getElementById("deleteModalConfirmBtn").addEventListener("click", async () => {
+      if (!pendingDeleteWorker) return;
+      const workerId = pendingDeleteWorker.id;
+      closeDeleteModal();
+      await window.deleteWorker(workerId);
+    });
+    document.getElementById("deleteModal").addEventListener("click", (event) => {
+      if (event.target === document.getElementById("deleteModal")) {
+        closeDeleteModal();
+      }
+    });
+
+    window.loadWorkers();
+  </script>
+</body>
+</html>

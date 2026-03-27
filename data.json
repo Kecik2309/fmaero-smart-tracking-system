@@ -1,0 +1,11 @@
+{
+  "materials": {
+    "init": "data"
+  },
+  "transactions": {
+    "init": "data"
+  },
+  "users": {
+    "init": "data"
+  }
+}

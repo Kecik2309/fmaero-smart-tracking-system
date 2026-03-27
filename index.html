@@ -1,0 +1,581 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        (function () {
+            const authRaw = localStorage.getItem("fmaero_auth");
+            const allowedRoles = new Set(["storekeeper", "manager", "siteSupervisor"]);
+
+            if (!authRaw) {
+                window.location.replace("login.html");
+                return;
+            }
+
+            try {
+                const session = JSON.parse(authRaw);
+                if (!session || !session.email || !session.role || !allowedRoles.has(session.role)) {
+                    localStorage.removeItem("fmaero_auth");
+                    window.location.replace("login.html");
+                }
+            } catch {
+                localStorage.removeItem("fmaero_auth");
+                window.location.replace("login.html");
+            }
+        }());
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <title>FMAERO Smart Tracking System</title>
+</head>
+<body>
+    <div class="app-shell">
+        <aside id="sidebar" class="sidebar">
+            <h2>FMAERO</h2>
+            <div class="sidebar-role-wrap">
+                <span id="sidebarRolePill" class="sidebar-role-pill">Guest</span>
+            </div>
+            <a class="sidebar-link active" href="#overviewSection" data-section="overviewSection"><i class="fa-solid fa-gauge"></i> Overview</a>
+            <a class="sidebar-link" href="#materialsSection" data-section="materialsSection"><i class="fa-solid fa-box"></i> Materials</a>
+            <a class="sidebar-link" href="#transactionsSection" data-section="transactionsSection"><i class="fa-solid fa-clock-rotate-left"></i> Transactions</a>
+            <a class="sidebar-link" href="#scannerSection" data-section="scannerSection"><i class="fa-solid fa-qrcode"></i> Scanner</a>
+            <a class="sidebar-link" href="#chartsSection" data-section="chartsSection"><i class="fa-solid fa-chart-column"></i> Charts</a>
+            <a class="sidebar-link" href="#settingsSection" data-section="settingsSection"><i class="fa-solid fa-gear"></i> Settings</a>
+            <a class="sidebar-link permission-gated" data-permission="export_reports" href="#reportsSection" data-section="reportsSection"><i class="fa-solid fa-file-export"></i> Reports</a>
+        </aside>
+
+        <main class="main-content">
+            <button class="sidebar-toggle" type="button" onclick="toggleSidebar()">
+                <i class="fa-solid fa-bars"></i> Menu
+            </button>
+
+            <section id="overviewSection">
+                <div class="title-row">
+                    <img id="companyLogoImg" class="company-inline-logo" src="./logo_company_1.png" alt="FMAERO Logo" onerror="this.src='./logo_company.jpeg'">
+                    <h1>FMAERO Smart Tracking System</h1>
+                </div>
+
+                <div class="auth-panel">
+                    <div class="auth-controls">
+                        <span id="authUserLabel">Signed in user: -</span>
+                        <button id="logoutBtn" onclick="logout()">Logout</button>
+                        <span id="roleBadge" class="role-badge">Role: Guest</span>
+                    </div>
+                    <p id="authStatus">Session not loaded.</p>
+                </div>
+
+                <div id="roleFocusPanel" class="role-focus-panel">
+                    <div class="role-focus-copy">
+                        <span id="roleFocusKicker" class="role-focus-kicker">Operational View</span>
+                        <h3 id="roleFocusTitle">Inventory Workspace</h3>
+                        <p id="roleFocusText">Monitor daily material flow, review activity, and use the dashboard tools based on your assigned role.</p>
+                    </div>
+                    <div class="role-focus-tags">
+                        <span id="roleFocusTagOne" class="role-focus-tag">Live Dashboard</span>
+                        <span id="roleFocusTagTwo" class="role-focus-tag">Role-Aware Access</span>
+                        <span id="roleFocusTagThree" class="role-focus-tag">Protected Session</span>
+                    </div>
+                </div>
+
+                <div class="top-row">
+                    <div class="add-section">
+                        <h3>Add New Material</h3>
+                        <div class="input-group">
+                            <input type="text" id="materialName" class="requires-auth" placeholder="Material Name" disabled>
+                            <input type="text" id="materialRfidTag" class="requires-auth" placeholder="RFID Tag (Optional)" disabled>
+                            <input type="number" id="materialStock" class="requires-auth" placeholder="Initial Stock" min="0" disabled>
+                            <button class="requires-auth" onclick="addMaterial()" disabled>Add Material</button>
+                        </div>
+                    </div>
+
+                    <div class="search-section">
+                        <h3><span class="search-icon-title"><i class="fa-solid fa-magnifying-glass"></i></span> Search Material</h3>
+                        <div class="search-container">
+                            <input type="text" id="searchInput" placeholder="Search by Code, Name, or RFID..." onkeyup="searchMaterial()">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="lowStockBadge">LOW STOCK ALERT</div>
+
+                <div id="dashboardSummary">
+                    <div class="card">
+                        <h3>Total Materials</h3>
+                        <p id="totalMaterials">0</p>
+                    </div>
+
+                    <div class="card">
+                        <h3>Total Stock</h3>
+                        <p id="totalStock">0</p>
+                    </div>
+
+                    <div class="card">
+                        <h3>Low Stock Items</h3>
+                        <p id="lowStockItems">0</p>
+                    </div>
+                </div>
+
+                <div class="overview-last-flow-card">
+                    <div class="overview-last-flow-header">
+                        <h3>Last IN / OUT Flow</h3>
+                        <span id="overviewLastFlowBadge" class="overview-last-flow-badge">No Data</span>
+                    </div>
+                    <div class="overview-last-flow-grid">
+                        <p><strong>Material:</strong> <span id="overviewLastFlowMaterial">-</span></p>
+                        <p><strong>Quantity:</strong> <span id="overviewLastFlowQuantity">-</span></p>
+                        <p><strong>Time:</strong> <span id="overviewLastFlowTime">-</span></p>
+                        <p><strong>PIC:</strong> <span id="overviewLastFlowPic">-</span></p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="chartsSection">
+                <div class="chart-card">
+                    <h3>Monthly Stock IN vs OUT</h3>
+                    <canvas id="stockMovementChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Low vs Normal Materials</h3>
+                    <canvas id="stockStatusChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Top 5 Most Used Materials</h3>
+                    <canvas id="topMaterialsChart"></canvas>
+                </div>
+            </section>
+
+            <section id="scannerSection">
+                <div class="section-header">
+                    <h3>RFID / QR Scanner</h3>
+                </div>
+                <div class="scanner-grid">
+                    <div class="scanner-card">
+                        <h4>QR Scanner</h4>
+                        <div class="scanner-actions">
+                            <button type="button" class="export-btn requires-auth" onclick="startQrScanner()">Start QR Scan</button>
+                            <button type="button" class="range-reset-btn requires-auth" onclick="stopQrScanner()">Stop</button>
+                        </div>
+                        <p id="qrScannerStatus" class="scanner-status">Status: Idle</p>
+                        <div id="qrReader" class="qr-reader"></div>
+                        <p id="qrLastResult" class="scanner-result">Last QR: -</p>
+                        <div id="lastScanSummary" class="last-scan-summary">
+                            <p>Last Scan</p>
+                            <p>Material: <span id="lastScanMaterial">-</span></p>
+                            <p>Action: <span id="lastScanAction">-</span></p>
+                            <p>Quantity: <span id="lastScanQuantity">-</span></p>
+                            <p>Time: <span id="lastScanTime">-</span></p>
+                        </div>
+                        <p class="scanner-note">Scan material code (example: MAT1234). It will auto-search in table.</p>
+                    </div>
+                    <div class="scanner-card">
+                        <h4>RFID Input</h4>
+                        <div class="modal-field">
+                            <label for="rfidInput">RFID Tag / Material Code</label>
+                            <input type="text" id="rfidInput" class="requires-auth" placeholder="Tap RFID tag or type code">
+                        </div>
+                        <div class="scanner-actions">
+                            <button type="button" class="export-btn requires-auth" onclick="processRfidInput()">Submit RFID</button>
+                        </div>
+                        <p id="rfidLastResult" class="scanner-result">Last RFID: -</p>
+                        <p class="scanner-note">If your RFID reader acts as keyboard wedge, place cursor in input then tap card.</p>
+                        <p class="scanner-note">For external hardware, send data to Firebase path <strong>rfidScans/latest</strong> with <strong>tag</strong>, <strong>source</strong>, and <strong>scannedAt</strong>.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="materialsSection">
+                <div class="material-header">
+                    <h3>Material List</h3>
+
+                    <div class="material-controls">
+                        <div class="sort-dropdown">
+                            <i class="fa-solid fa-sort sort-icon"></i>
+                            <select id="sortSelect" onchange="sortMaterials(this.value)">
+                                <option value="newest">Newest</option>
+                                <option value="oldest">Oldest</option>
+                                <option value="stockHigh">Stock: High to Low</option>
+                                <option value="stockLow">Stock: Low to High</option>
+                                <option value="nameAZ">Name: A to Z</option>
+                                <option value="nameZA">Name: Z to A</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-dropdown">
+                            <i class="fa-solid fa-filter filter-icon"></i>
+                            <select id="filterSelect" onchange="filterMaterials(this.value)">
+                                <option value="all">All</option>
+                                <option value="low">Low Stock (0)</option>
+                                <option value="normal">Normal (0)</option>
+                            </select>
+                        </div>
+
+                        <div class="export-group permission-gated" data-permission="export_reports">
+                            <button class="export-btn requires-auth" onclick="exportMaterialsExcel()" disabled>Export Materials Excel</button>
+                            <button class="export-btn requires-auth" onclick="exportMaterialsPDF()" disabled>Export Materials PDF</button>
+                            <button class="export-btn requires-auth" onclick="printAllMaterialQrLabels()" disabled>Print All QR Labels</button>
+                        </div>
+                    </div>
+                </div>
+
+                <table id="materialTable">
+                    <thead>
+                        <tr>
+                            <th>Bil.</th>
+                            <th>Code</th>
+                            <th>RFID Tag</th>
+                            <th>Materials</th>
+                            <th>Stock</th>
+                            <th>Status</th>
+                            <th>Created At</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+
+            <section id="transactionsSection">
+                <div class="section-header">
+                    <h3>Transaction History</h3>
+                    <div class="transaction-tools">
+                        <div class="date-range">
+                            <label for="txFromDate">From</label>
+                            <input type="date" id="txFromDate">
+                            <label for="txToDate">To</label>
+                            <input type="date" id="txToDate">
+                            <label for="txSearchInput">Search</label>
+                            <input type="text" id="txSearchInput" placeholder="Code / PIC / role">
+                            <label for="txTypeFilter">Type</label>
+                            <select id="txTypeFilter">
+                                <option value="all">All</option>
+                                <option value="IN">IN</option>
+                                <option value="OUT">OUT</option>
+                            </select>
+                            <button type="button" class="range-reset-btn" onclick="resetDateRange()">Reset Range</button>
+                        </div>
+                        <div class="export-group permission-gated" data-permission="export_reports">
+                            <button class="export-btn requires-auth" onclick="exportTransactionsExcel()" disabled>Export Transactions Excel</button>
+                            <button class="export-btn requires-auth" onclick="exportTransactionsPDF()" disabled>Export Transactions PDF</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="transactionSummary" class="transaction-summary">
+                    <div class="transaction-summary-card in">
+                        <span>Total IN</span>
+                        <strong id="txTotalIn">0</strong>
+                    </div>
+                    <div class="transaction-summary-card out">
+                        <span>Total OUT</span>
+                        <strong id="txTotalOut">0</strong>
+                    </div>
+                    <div class="transaction-summary-card net">
+                        <span>Net Movement</span>
+                        <strong id="txNetMovement">0</strong>
+                    </div>
+                </div>
+
+                <div class="transaction-table-scroll">
+                    <table id="transactionTable">
+                        <thead>
+                            <tr>
+                                <th>Bil.</th>
+                                <th class="sortable-header" onclick="sortTable('materialCode')">Code</th>
+                                <th class="sortable-header" onclick="sortTable('type')">Status</th>
+                                <th>Reason</th>
+                                <th>Remark</th>
+                                <th class="sortable-header" onclick="sortTable('amount')">Stock</th>
+                                <th class="sortable-header" onclick="sortTable('timestamp')">Created At</th>
+                                <th>Performed By (Role)</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="transaction-pagination">
+                    <p id="transactionPaginationInfo" class="transaction-pagination-info">Showing 0-0 of 0 transactions.</p>
+                    <div id="transactionPaginationControls" class="transaction-pagination-controls"></div>
+                </div>
+                <p id="transactionEmptyState" class="table-empty-state" hidden>No transactions found for selected date range.</p>
+            </section>
+
+            <section id="settingsSection">
+                <div class="section-header">
+                    <h3>Settings</h3>
+                </div>
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h4>Profile</h4>
+                        <div class="settings-row"><span>Name</span><strong id="settingsProfileName">-</strong></div>
+                        <div class="settings-row"><span>Email</span><strong id="settingsProfileEmail">-</strong></div>
+                        <div class="settings-row"><span>Role</span><strong id="settingsProfileRole">Guest</strong></div>
+                    </div>
+                    <div class="settings-card">
+                        <h4>Preferences</h4>
+                        <div class="settings-field">
+                            <label for="settingsThemeSelect">Theme</label>
+                            <select id="settingsThemeSelect">
+                                <option value="blue">Blue (Default)</option>
+                                <option value="teal">Teal</option>
+                                <option value="slate">Slate</option>
+                            </select>
+                        </div>
+                        <div class="settings-field">
+                            <label for="settingsDefaultRange">Default Transaction Date Range</label>
+                            <select id="settingsDefaultRange">
+                                <option value="all">All Dates</option>
+                                <option value="7">Last 7 Days</option>
+                                <option value="30">Last 30 Days</option>
+                            </select>
+                        </div>
+                        <div class="scanner-actions">
+                            <button type="button" class="export-btn" onclick="savePreferences()">Save Preferences</button>
+                            <button type="button" class="range-reset-btn" onclick="resetPreferences()">Reset</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="reportsSection" class="reports-note">
+                <span class="reports-kicker">Manager Reporting</span>
+                <h3>Reports</h3>
+                <p>Use export buttons to generate CSV/PDF reports. Summary and recent report activity are shown below.</p>
+                <div class="report-info-form">
+                    <h4>Report Information (For HQ Submission)</h4>
+                    <div class="report-info-grid">
+                        <div class="settings-field">
+                            <label for="reportReferenceNumber">Reference Number</label>
+                            <input type="text" id="reportReferenceNumber" placeholder="e.g. REF-2026-001">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportZone">Zone</label>
+                            <input type="text" id="reportZone" placeholder="e.g. Zone A">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportProject">Project</label>
+                            <input type="text" id="reportProject" placeholder="Project name">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportDepartment">Department</label>
+                            <input type="text" id="reportDepartment" placeholder="Department">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportProductionGroup">Production Group</label>
+                            <input type="text" id="reportProductionGroup" placeholder="Production group">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportDrawingNumber">Drawing Number</label>
+                            <input type="text" id="reportDrawingNumber" placeholder="Drawing number">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportStartDate">Start Date</label>
+                            <input type="date" id="reportStartDate">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportFinishDate">Finish Date</label>
+                            <input type="date" id="reportFinishDate">
+                        </div>
+                        <div class="settings-field">
+                            <label for="reportPic">PIC</label>
+                            <input type="text" id="reportPic" placeholder="Person in charge">
+                        </div>
+                        <div class="settings-field report-info-wide">
+                            <label for="reportRemark">Remark</label>
+                            <textarea id="reportRemark" rows="2" placeholder="Remark"></textarea>
+                        </div>
+                        <div class="settings-field report-info-wide">
+                            <label for="reportFeedback">Feedback</label>
+                            <textarea id="reportFeedback" rows="2" placeholder="Feedback"></textarea>
+                        </div>
+                    </div>
+                    <div class="scanner-actions">
+                        <button type="button" class="export-btn" onclick="saveReportInfo()">Save Report Info</button>
+                        <button type="button" class="range-reset-btn" onclick="resetReportInfo()">Reset Report Info</button>
+                    </div>
+                </div>
+                <div class="reports-grid">
+                    <div class="report-mini-card">
+                        <span>Total Materials</span>
+                        <strong id="reportTotalMaterials">0</strong>
+                    </div>
+                    <div class="report-mini-card">
+                        <span>Total Transactions</span>
+                        <strong id="reportTotalTransactions">0</strong>
+                    </div>
+                    <div class="report-mini-card">
+                        <span>Total OUT (Range)</span>
+                        <strong id="reportRangeOut">0</strong>
+                    </div>
+                    <div class="report-mini-card">
+                        <span>Low Stock Items</span>
+                        <strong id="reportLowStock">0</strong>
+                    </div>
+                </div>
+                <div class="report-log-wrap">
+                    <div class="report-log-header">
+                        <div>
+                            <h4>Recent Report Activity</h4>
+                            <p class="report-log-subtitle">Latest export actions generated from the manager reporting workspace.</p>
+                        </div>
+                        <span class="report-log-pill">Live Activity</span>
+                    </div>
+                    <table id="reportLogTable">
+                        <thead>
+                            <tr>
+                                <th>Bil.</th>
+                                <th>Time</th>
+                                <th>Report</th>
+                                <th>Format</th>
+                                <th>Rows</th>
+                                <th>By</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <p id="reportLogEmpty" class="table-empty-state">No report export activity yet.</p>
+                </div>
+            </section>
+
+            <footer class="app-footer">
+                <p>&copy; 2026 FMAERO Smart Tracking System. All rights reserved.</p>
+            </footer>
+        </main>
+    </div>
+
+    <div id="stockModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card">
+            <h3 id="stockModalTitle">Stock Update</h3>
+            <div class="modal-field">
+                <label for="stockModalAmount">Amount</label>
+                <input type="text" id="stockModalAmount" inputmode="numeric" autocomplete="off" placeholder="Enter amount">
+            </div>
+            <div class="modal-field">
+                <label for="stockModalPic">Person In Charge (PIC)</label>
+                <input type="text" id="stockModalPic" placeholder="Enter PIC name">
+            </div>
+            <div class="modal-field">
+                <label for="stockModalReason">Reason</label>
+                <select id="stockModalReason">
+                    <option value="Site Usage">Site Usage</option>
+                    <option value="Waste">Waste</option>
+                    <option value="Damaged">Damaged</option>
+                    <option value="Expired">Expired</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="modal-field">
+                <label for="stockModalRemark">Remark (Optional)</label>
+                <input type="text" id="stockModalRemark" placeholder="Enter remark">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn secondary" id="stockModalCancelBtn">Cancel</button>
+                <button type="button" class="modal-btn primary" id="stockModalSaveBtn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card">
+            <h3>Edit Material</h3>
+            <div class="modal-field">
+                <label for="editModalName">Material Name</label>
+                <input type="text" id="editModalName" placeholder="Material Name">
+            </div>
+            <div class="modal-field">
+                <label for="editModalStock">Stock</label>
+                <input type="number" id="editModalStock" min="0" step="1" placeholder="Stock value">
+            </div>
+            <div class="modal-field">
+                <label for="editModalRfidTag">RFID Tag</label>
+                <input type="text" id="editModalRfidTag" placeholder="RFID Tag (Optional)">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn secondary" id="editModalCancelBtn">Cancel</button>
+                <button type="button" class="modal-btn primary" id="editModalSaveBtn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card">
+            <h3>Confirm Action</h3>
+            <p id="confirmModalMessage">Are you sure?</p>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn secondary" id="confirmModalCancelBtn">Cancel</button>
+                <button type="button" class="modal-btn danger" id="confirmModalConfirmBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="materialDetailsModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card material-details-card">
+            <h3>Material Details</h3>
+            <div class="material-detail-grid">
+                <p><strong>Code:</strong> <span id="materialDetailsCode">-</span></p>
+                <p><strong>Name:</strong> <span id="materialDetailsName">-</span></p>
+                <p><strong>RFID Tag:</strong> <span id="materialDetailsRfid">-</span></p>
+                <p><strong>Stock:</strong> <span id="materialDetailsStock">0</span></p>
+                <p><strong>Status:</strong> <span id="materialDetailsStatus">-</span></p>
+                <p><strong>Created At:</strong> <span id="materialDetailsCreatedAt">-</span></p>
+            </div>
+            <div class="material-qr-preview">
+                <div id="materialQrCode" aria-label="Material QR code"></div>
+                <p class="qr-caption">QR content: <span id="materialQrContent">-</span></p>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn secondary" onclick="downloadMaterialQr()">Download QR Label</button>
+                <button type="button" class="modal-btn primary" onclick="printMaterialQr()">Print QR Label</button>
+                <button type="button" class="modal-btn secondary" id="materialDetailsCloseBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="scanTxModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card">
+            <h3>Scanned Material Transaction</h3>
+            <div class="material-detail-grid scan-detail-grid">
+                <p><strong>Material Code:</strong> <span id="scanTxCode">-</span></p>
+                <p><strong>Material Name:</strong> <span id="scanTxName">-</span></p>
+                <p><strong>Current Stock:</strong> <span id="scanTxStock">0</span></p>
+            </div>
+            <div class="modal-field">
+                <label for="scanTxType">Transaction Type</label>
+                <select id="scanTxType">
+                    <option value="IN">Stock IN</option>
+                    <option value="OUT">Stock OUT</option>
+                </select>
+            </div>
+            <div class="modal-field">
+                <label for="scanTxQuantity">Quantity</label>
+                <input type="number" id="scanTxQuantity" min="1" step="1" inputmode="numeric" placeholder="Enter quantity">
+            </div>
+            <div class="modal-field">
+                <label for="scanTxReason">Reason</label>
+                <select id="scanTxReason">
+                    <option value="Site Usage">Site Usage</option>
+                    <option value="Waste">Waste</option>
+                    <option value="Damaged">Damaged</option>
+                    <option value="Expired">Expired</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="modal-field">
+                <label for="scanTxRemark">Remark (Optional)</label>
+                <input type="text" id="scanTxRemark" placeholder="Enter remark">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn secondary" id="scanTxCancelBtn">Cancel</button>
+                <button type="button" class="modal-btn primary" id="scanTxSubmitBtn">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

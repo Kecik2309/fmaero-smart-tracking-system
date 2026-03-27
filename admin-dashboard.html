@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FMAERO Smart Tracking System - Admin Dashboard</title>
+    <style>
+        :root {
+            --bg: #edf4f7;
+            --card: rgba(255, 252, 247, 0.9);
+            --primary: #1b5c85;
+            --primary-dark: #144767;
+            --text: #17324d;
+            --muted: #6b7f92;
+            --border: #cad8e2;
+            --accent: #f3e3bf;
+            --accent-text: #8f5c13;
+            --accent-border: #e7c880;
+            --success-soft: #dff1e4;
+            --shadow: 0 20px 48px rgba(11, 31, 52, 0.14);
+            --shadow-soft: 0 10px 30px rgba(11, 31, 52, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, Helvetica, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image: url("./logo_company_1.png");
+            background-repeat: no-repeat;
+            background-position: 84% 16%;
+            background-size: min(32vw, 340px);
+            opacity: 0.04;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(circle at 12% 10%, rgba(27, 92, 133, 0.14), transparent 26%),
+                radial-gradient(circle at 88% 88%, rgba(216, 155, 60, 0.1), transparent 24%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .page {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 32px 20px 48px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding: 18px 20px;
+            border: 1px solid rgba(202, 216, 226, 0.92);
+            border-radius: 24px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,247,233,0.9));
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow-soft);
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .company-inline-logo {
+            width: 94px;
+            height: 94px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .title-wrap h1 {
+            margin: 0 0 6px;
+            color: var(--primary);
+            font-size: 38px;
+            letter-spacing: -0.03em;
+        }
+
+        .title-wrap p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 15px;
+        }
+
+        .logout-btn {
+            border: none;
+            border-radius: 14px;
+            padding: 13px 20px;
+            background: var(--primary);
+            color: #ffffff;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 12px 24px rgba(27, 92, 133, 0.22);
+        }
+
+        .logout-btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .hero-strip {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(160px, 1fr));
+            gap: 18px;
+            margin-bottom: 24px;
+        }
+
+        .hero-panel,
+        .summary-card {
+            border: 1px solid rgba(202, 216, 226, 0.92);
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,244,236,0.88));
+            backdrop-filter: blur(8px);
+            box-shadow: var(--shadow-soft);
+        }
+
+        .hero-panel {
+            padding: 22px 24px;
+        }
+
+        .hero-panel h2 {
+            margin: 0 0 10px;
+            font-size: 24px;
+            color: var(--primary);
+        }
+
+        .hero-panel p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .hero-tags {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .hero-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: var(--accent);
+            color: var(--accent-text);
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid var(--accent-border);
+        }
+
+        .summary-card {
+            padding: 18px 20px;
+        }
+
+        .summary-card span {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+        }
+
+        .summary-card strong {
+            font-size: 30px;
+            line-height: 1;
+            color: var(--primary);
+        }
+
+        .hero-card,
+        .info-card,
+        .action-card {
+            background: var(--card);
+            border: 1px solid rgba(202, 216, 226, 0.94);
+            border-radius: 24px;
+            backdrop-filter: blur(8px);
+            box-shadow: var(--shadow);
+        }
+
+        .hero-card {
+            padding: 28px;
+            margin-bottom: 22px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(255,248,236,0.92) 100%);
+        }
+
+        .hero-card h2 {
+            margin: 0 0 10px;
+            font-size: 26px;
+            letter-spacing: -0.02em;
+        }
+
+        .hero-card p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 18px;
+            margin-bottom: 22px;
+        }
+
+        .info-card {
+            padding: 22px;
+        }
+
+        .info-card span {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .info-card strong {
+            font-size: 24px;
+            color: var(--primary);
+        }
+
+        .section-title {
+            margin: 0 0 14px;
+            font-size: 24px;
+            color: var(--primary);
+            letter-spacing: -0.02em;
+        }
+
+        .section-kicker {
+            display: inline-flex;
+            margin-bottom: 10px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: var(--primary);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 18px;
+        }
+
+        .action-card {
+            padding: 22px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .action-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 24px 40px rgba(15, 23, 42, 0.12);
+            border-color: #93c5fd;
+        }
+
+        .action-card h3 {
+            margin: 0 0 10px;
+            font-size: 19px;
+        }
+
+        .action-card p {
+            margin: 0 0 18px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .action-link {
+            display: inline-block;
+            padding: 11px 16px;
+            border-radius: 14px;
+            background: var(--primary);
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: 700;
+            box-shadow: 0 12px 22px rgba(27, 92, 133, 0.16);
+        }
+
+        .action-link:hover {
+            background: var(--primary-dark);
+        }
+
+        .note-card {
+            margin-top: 22px;
+            padding: 20px 22px;
+            border: 1px solid var(--accent-border);
+            border-radius: 22px;
+            background: rgba(219, 234, 254, 0.78);
+            box-shadow: var(--shadow-soft);
+        }
+
+        .note-card p {
+            margin: 0;
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .app-footer {
+            margin-top: 24px;
+            padding: 14px 18px;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.78);
+            color: #475569;
+            font-size: 13px;
+            text-align: center;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .app-footer p {
+            margin: 0;
+        }
+
+        @media (max-width: 640px) {
+            .hero-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .topbar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .brand-row {
+                align-items: flex-start;
+            }
+
+            .company-inline-logo {
+                width: 74px;
+                height: 74px;
+            }
+
+            .title-wrap h1 {
+                font-size: 31px;
+            }
+
+            .logout-btn {
+                width: 100%;
+            }
+        }
+    </style>
+    <script>
+        (function () {
+            const raw = localStorage.getItem("fmaero_auth");
+
+            if (!raw) {
+                window.location.replace("login.html");
+                return;
+            }
+
+            try {
+                const session = JSON.parse(raw);
+                if (!session || session.role !== "admin") {
+                    window.location.replace("login.html");
+                }
+            } catch {
+                localStorage.removeItem("fmaero_auth");
+                window.location.replace("login.html");
+            }
+        }());
+    </script>
+</head>
+<body>
+    <div class="page">
+        <div class="topbar">
+            <div class="brand-row">
+                <img class="company-inline-logo" src="./logo_company_1.png" alt="FMAERO Logo" onerror="this.src='./logo_company.jpeg'">
+                <div class="title-wrap">
+                    <h1>FMAERO Smart Tracking System</h1>
+                    <p>Admin dashboard access is protected by local session authentication.</p>
+                </div>
+            </div>
+            <button class="logout-btn" type="button" onclick="logout()">Logout</button>
+        </div>
+
+        <section class="hero-strip">
+            <div class="hero-panel">
+                <h2>Admin Control Center</h2>
+                <p>Use this dashboard as the main command point for worker access, role routing, and operational entry into the FMAERO Smart Tracking System.</p>
+                <div class="hero-tags">
+                    <span class="hero-tag">Admin Only</span>
+                    <span class="hero-tag">Role Routing</span>
+                    <span class="hero-tag">Worker Access</span>
+                </div>
+            </div>
+            <div class="summary-card">
+                <span>Access Level</span>
+                <strong>Admin</strong>
+            </div>
+            <div class="summary-card">
+                <span>Session Status</span>
+                <strong>Active</strong>
+            </div>
+        </section>
+
+        <section class="hero-card">
+            <h2>Administrator Workspace</h2>
+            <p id="adminSessionText">Signed in as administrator.</p>
+        </section>
+
+        <section class="grid">
+            <article class="info-card">
+                <span>Role</span>
+                <strong>Admin</strong>
+            </article>
+            <article class="info-card">
+                <span>Primary Access</span>
+                <strong>Worker Control</strong>
+            </article>
+            <article class="info-card">
+                <span>Session Storage</span>
+                <strong>localStorage</strong>
+            </article>
+            <article class="info-card">
+                <span>Authentication</span>
+                <strong>Protected</strong>
+            </article>
+        </section>
+
+        <section>
+            <span class="section-kicker">Quick Access</span>
+            <h2 class="section-title">Admin Actions</h2>
+            <div class="actions-grid">
+                <article class="action-card">
+                    <h3>Manage Workers</h3>
+                    <p>Add, edit, and delete worker accounts stored in Firebase Realtime Database.</p>
+                    <a class="action-link" href="admin-workers.html">Open Worker Management</a>
+                </article>
+                <article class="action-card">
+                    <h3>Manager Dashboard</h3>
+                    <p>Review the manager-side protected dashboard and role-specific access flow.</p>
+                    <a class="action-link" href="manager-dashboard.html">Open Manager View</a>
+                </article>
+                <article class="action-card">
+                    <h3>Storekeeper Dashboard</h3>
+                    <p>Check the storekeeper landing page used after successful Firebase login.</p>
+                    <a class="action-link" href="storekeeper-dashboard.html">Open Storekeeper View</a>
+                </article>
+                <article class="action-card">
+                    <h3>Supervisor Dashboard</h3>
+                    <p>Open the site supervisor dashboard and verify role guarding behavior.</p>
+                    <a class="action-link" href="supervisor-dashboard.html">Open Supervisor View</a>
+                </article>
+            </div>
+        </section>
+
+        <section class="note-card">
+            <p>
+                Admin login uses a protected local session and acts as the control point for worker registration.
+                Worker accounts continue to authenticate against Firebase Realtime Database via the login page.
+            </p>
+        </section>
+
+        <footer class="app-footer">
+            <p>&copy; 2026 FMAERO Smart Tracking System. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        const session = JSON.parse(localStorage.getItem("fmaero_auth") || "{}");
+        const sessionText = document.getElementById("adminSessionText");
+
+        if (sessionText && session.email) {
+            sessionText.textContent = `Signed in as ${session.email}.`;
+        }
+
+        function logout() {
+            localStorage.removeItem("fmaero_auth");
+            localStorage.removeItem("userRole");
+            window.location.replace("login.html");
+        }
+    </script>
+</body>
+</html>
