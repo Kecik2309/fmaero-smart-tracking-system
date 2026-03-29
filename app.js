@@ -1,4 +1,4 @@
-import { ref, push, set, onValue, remove, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { ref, push, set, onValue, remove, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { db } from "./firebase-client.js";
 import { requireRole, logoutToLogin, clearCachedSession } from "./auth-utils.js";
 const COMPANY_NAME = "FMAERO Smart Tracking System";
@@ -64,6 +64,24 @@ const ROLES = {
     MANAGER: "manager",
     SITE_SUPERVISOR: "siteSupervisor",
     STOREKEEPER: "storekeeper"
+};
+
+const ROLE_LAYOUTS = {
+    [ROLES.MANAGER]: {
+        visibleSections: ["overviewSection", "materialsSection", "transactionsSection", "chartsSection", "settingsSection", "reportsSection"],
+        showAddMaterial: false,
+        materialActionHeader: "Details"
+    },
+    [ROLES.SITE_SUPERVISOR]: {
+        visibleSections: ["overviewSection", "materialsSection", "transactionsSection", "chartsSection", "settingsSection"],
+        showAddMaterial: false,
+        materialActionHeader: "Details"
+    },
+    [ROLES.STOREKEEPER]: {
+        visibleSections: ["overviewSection", "materialsSection", "transactionsSection", "scannerSection", "chartsSection", "settingsSection", "reportsSection"],
+        showAddMaterial: true,
+        materialActionHeader: "Action"
+    }
 };
 
 const SETTINGS_STORAGE_KEY = "fmaero_settings_v1";
@@ -145,6 +163,14 @@ function loadSettings() {
     } catch {
         return { ...DEFAULT_SETTINGS };
     }
+}
+
+function getRoleLayout(role) {
+    return ROLE_LAYOUTS[role] || {
+        visibleSections: ["overviewSection", "materialsSection", "transactionsSection", "chartsSection", "settingsSection"],
+        showAddMaterial: false,
+        materialActionHeader: "Action"
+    };
 }
 
 function persistSettings() {
@@ -365,6 +391,21 @@ function closeStockModal(result) {
 
 function normalizeRfidTag(value) {
     return String(value || "").trim().toUpperCase();
+}
+
+function generateUniqueMaterialCode() {
+    const usedCodes = new Set(
+        state.materials
+            .map((material) => normalizeRfidTag(material.code))
+            .filter((code) => /^MAT\d+$/.test(code))
+    );
+
+    let nextNumber = 1000;
+    while (usedCodes.has(`MAT${nextNumber}`)) {
+        nextNumber += 1;
+    }
+
+    return `MAT${nextNumber}`;
 }
 
 function findMaterialByScanCode(value) {
@@ -764,7 +805,7 @@ window.printMaterialQr = function () {
 };
 
 window.printAllMaterialQrLabels = async function () {
-    if (!requirePermission("print all QR labels", "export_reports")) return;
+    if (!requirePermission("print all QR labels", "print_material_qr")) return;
     if (typeof QRCode === "undefined") {
         notify("QR generator failed to load.", "error");
         return;
@@ -1043,9 +1084,15 @@ function normalizeRole(value) {
 function hasPermission(permission) {
     if (!state.user || !state.role) return false;
 
+    if (permission === "report_access") {
+        return state.role === ROLES.MANAGER || state.role === ROLES.STOREKEEPER;
+    }
+
     if (permission === "export_reports") {
         return state.role === ROLES.MANAGER || state.role === ROLES.STOREKEEPER;
     }
+
+    if (permission === "print_material_qr") return state.role === ROLES.STOREKEEPER;
 
     if (permission === "add_material") return state.role === ROLES.STOREKEEPER;
     if (permission === "update_stock") return state.role === ROLES.STOREKEEPER;
@@ -1091,6 +1138,39 @@ function setPermissionVisibility(permission, visible) {
     targets.forEach((el) => {
         el.classList.toggle("hidden-by-permission", !visible);
     });
+}
+
+function applyRoleLayout() {
+    const layout = getRoleLayout(state.role);
+    const visibleSections = new Set(layout.visibleSections);
+    const sidebarLinks = document.querySelectorAll(".sidebar-link");
+
+    sidebarLinks.forEach((link) => {
+        const sectionId = link.dataset.section;
+        const isVisible = visibleSections.has(sectionId);
+        link.hidden = !isVisible;
+        link.classList.toggle("hidden-by-permission", !isVisible);
+        if (!isVisible) link.classList.remove("active");
+    });
+
+    ["overviewSection", "materialsSection", "transactionsSection", "scannerSection", "chartsSection", "settingsSection", "reportsSection"].forEach((id) => {
+        const section = document.getElementById(id);
+        if (section) section.hidden = !visibleSections.has(id);
+    });
+
+    const addMaterialCard = document.getElementById("addMaterialCard");
+    if (addMaterialCard) addMaterialCard.hidden = !layout.showAddMaterial;
+
+    const actionHeader = document.getElementById("materialActionHeader");
+    if (actionHeader) {
+        actionHeader.textContent = layout.materialActionHeader;
+    }
+
+    const firstVisibleLink = Array.from(sidebarLinks).find((link) => !link.hidden);
+    const activeVisibleLink = Array.from(sidebarLinks).find((link) => !link.hidden && link.classList.contains("active"));
+    if (!activeVisibleLink && firstVisibleLink) {
+        firstVisibleLink.classList.add("active");
+    }
 }
 
 function formatRoleLabel(role) {
@@ -1223,7 +1303,9 @@ function updateAuthUI() {
     }
 
     const canAdd = hasPermission("add_material");
+    const canReportAccess = hasPermission("report_access");
     const canExport = hasPermission("export_reports");
+    const canPrintLabels = hasPermission("print_material_qr");
 
     setControlEnabledById("materialName", canAdd);
     setControlEnabledById("materialRfidTag", canAdd);
@@ -1232,11 +1314,14 @@ function updateAuthUI() {
 
     setControlEnabledByOnclick("exportMaterialsExcel()", canExport);
     setControlEnabledByOnclick("exportMaterialsPDF()", canExport);
-    setControlEnabledByOnclick("printAllMaterialQrLabels()", canExport);
+    setControlEnabledByOnclick("printAllMaterialQrLabels()", canPrintLabels);
     setControlEnabledByOnclick("exportTransactionsExcel()", canExport);
     setControlEnabledByOnclick("exportTransactionsPDF()", canExport);
 
+    setPermissionVisibility("report_access", canReportAccess);
     setPermissionVisibility("export_reports", canExport);
+    setPermissionVisibility("print_material_qr", canPrintLabels);
+    applyRoleLayout();
     updateSettingsProfileUI();
 }
 
@@ -3406,14 +3491,22 @@ function renderMaterialTable() {
     const canEdit = hasPermission("edit_material");
     const canDelete = hasPermission("delete_material");
 
-    const stockDisabled = canStock ? "" : "disabled title='No permission'";
-    const editDisabled = canEdit ? "" : "disabled title='No permission'";
-    const deleteDisabled = canDelete ? "" : "disabled title='No permission'";
-
     filtered.forEach((material, index) => {
         const isLowStock = (Number(material.stock) || 0) <= LOW_STOCK_THRESHOLD;
         const safeCode = escapeJsSingle(material.code);
         const safeId = escapeJsSingle(material.id);
+        const actions = [`<button onclick="viewMaterialDetails('${safeId}')">View</button>`];
+
+        if (canStock) {
+            actions.push(`<button onclick="increaseStock('${safeId}', '${safeCode}')">+ Stock</button>`);
+            actions.push(`<button onclick="decreaseStock('${safeId}', '${safeCode}')">- Stock</button>`);
+        }
+        if (canEdit) {
+            actions.push(`<button onclick="editMaterial('${safeId}')">Edit</button>`);
+        }
+        if (canDelete) {
+            actions.push(`<button onclick="deleteMaterial('${safeId}')">Delete</button>`);
+        }
 
         const row = `
             <tr>
@@ -3424,13 +3517,7 @@ function renderMaterialTable() {
                 <td>${material.stock ?? 0}</td>
                 <td>${isLowStock ? '<span style="color:red;font-weight:bold;">LOW STOCK</span>' : '<span style="color:green;">Normal</span>'}</td>
                 <td>${material.createdAt || "-"}</td>
-                <td>
-                    <button onclick="viewMaterialDetails('${safeId}')">View</button>
-                    <button ${stockDisabled} onclick="increaseStock('${safeId}', '${safeCode}')">+ Stock</button>
-                    <button ${stockDisabled} onclick="decreaseStock('${safeId}', '${safeCode}')">- Stock</button>
-                    <button ${editDisabled} onclick="editMaterial('${safeId}')">Edit</button>
-                    <button ${deleteDisabled} onclick="deleteMaterial('${material.id}')">Delete</button>
-                </td>
+                <td>${actions.join("")}</td>
             </tr>
         `;
 
@@ -3456,12 +3543,6 @@ async function handleScannedCode(rawCode, source = "manual", options = {}) {
     isScanFlowActive = true;
 
     try {
-        const searchInput = document.getElementById("searchInput");
-        if (searchInput) {
-            searchInput.value = code;
-            window.searchMaterial();
-        }
-
         const qrResultEl = document.getElementById("qrLastResult");
         if (qrResultEl) qrResultEl.textContent = `Last QR: ${code}`;
 
@@ -3474,24 +3555,9 @@ async function handleScannedCode(rawCode, source = "manual", options = {}) {
         const txData = await openScanTxModal(material, options);
         if (!txData) return;
 
-        const currentStock = Number(material.stock) || 0;
-        const nextStock = txData.type === "IN" ? currentStock + txData.quantity : currentStock - txData.quantity;
-        if (nextStock < 0) {
-            notify("Stock cannot be negative!", "error");
-            return;
-        }
-
         const actor = getActorInfo();
-        await saveTransaction(material.code, txData.type, txData.quantity, actor.name, txData.reason, txData.remark);
-
         const now = new Date();
-        await update(ref(db, `materials/${material.id}`), {
-            stock: nextStock,
-            updatedAt: now.toLocaleString(),
-            updatedAtISO: now.toISOString(),
-            updatedByUid: actor.uid,
-            updatedByEmail: actor.email
-        });
+        await recordInventoryMovement(material, txData.type, txData.quantity, actor.name, txData.reason, txData.remark);
 
         resetScanTxForm();
         updateLastScanSummary(material.code, txData.type, txData.quantity, now);
@@ -4168,7 +4234,7 @@ window.addMaterial = function () {
         }
     }
 
-    const materialCode = "MAT" + Math.floor(1000 + Math.random() * 9000);
+    const materialCode = generateUniqueMaterialCode();
     const materialRef = push(ref(db, "materials"));
 
     const now = new Date();
@@ -4282,6 +4348,63 @@ async function addTransaction(materialCode, type, amount, pic, reason = "Other",
 
 window.saveTransaction = saveTransaction;
 
+async function applyMaterialStockDelta(materialId, delta, actor, options = {}) {
+    const materialRef = ref(db, `materials/${materialId}`);
+    const now = new Date();
+    let abortedBecauseNegative = false;
+
+    const result = await runTransaction(materialRef, (current) => {
+        if (!current) return current;
+
+        const currentStock = Number(current.stock) || 0;
+        const nextStock = currentStock + delta;
+        if (nextStock < 0) {
+            abortedBecauseNegative = true;
+            return;
+        }
+
+        return {
+            ...current,
+            stock: nextStock,
+            updatedAt: options.updatedAt || now.toLocaleString(),
+            updatedAtISO: options.updatedAtISO || now.toISOString(),
+            updatedByUid: actor.uid,
+            updatedByEmail: actor.email
+        };
+    });
+
+    if (!result.committed) {
+        if (abortedBecauseNegative) {
+            throw new Error("Stock cannot be negative!");
+        }
+        throw new Error("Material not found or stock update was not committed.");
+    }
+
+    return Number(result.snapshot?.child("stock").val()) || 0;
+}
+
+async function recordInventoryMovement(material, type, amount, pic, reason = "Other", remark = "") {
+    const actor = getActorInfo();
+    const delta = type === "IN" ? amount : -amount;
+
+    await applyMaterialStockDelta(material.id, delta, actor);
+
+    try {
+        await saveTransaction(material.code, type, amount, pic, reason, remark);
+    } catch (error) {
+        try {
+            const rollbackNow = new Date();
+            await applyMaterialStockDelta(material.id, -delta, actor, {
+                updatedAt: rollbackNow.toLocaleString(),
+                updatedAtISO: rollbackNow.toISOString()
+            });
+        } catch (rollbackError) {
+            console.error("Rollback failed after transaction save error:", rollbackError);
+        }
+        throw error;
+    }
+}
+
 function getMaterialById(id) {
     return state.materials.find((material) => material.id === id) || null;
 }
@@ -4298,26 +4421,12 @@ window.increaseStock = async function (id, materialCode) {
     const data = await openStockModal("IN");
     if (!data) return;
 
-    const transactionSaved = await saveTransaction(materialCode, "IN", data.amount, data.pic, data.reason, data.remark);
-    if (!transactionSaved) return;
-
-    const currentStock = Number(material.stock) || 0;
-    const newStock = Number(currentStock) + data.amount;
-    const now = new Date();
-    const actor = getActorInfo();
-    update(ref(db, "materials/" + id), {
-        stock: newStock,
-        updatedAt: now.toLocaleString(),
-        updatedAtISO: now.toISOString(),
-        updatedByUid: actor.uid,
-        updatedByEmail: actor.email
-    })
-        .then(() => {
-            notify("Stock updated successfully.", "success");
-        })
-        .catch((error) => {
-            notify(`Error: ${error.message}`, "error");
-        });
+    try {
+        await recordInventoryMovement(material, "IN", data.amount, data.pic, data.reason, data.remark);
+        notify("Stock updated successfully.", "success");
+    } catch (error) {
+        notify(`Error: ${error.message || error}`, "error");
+    }
 };
 
 window.decreaseStock = async function (id, materialCode) {
@@ -4332,31 +4441,12 @@ window.decreaseStock = async function (id, materialCode) {
     const data = await openStockModal("OUT");
     if (!data) return;
 
-    const currentStock = Number(material.stock) || 0;
-    const newStock = Number(currentStock) - data.amount;
-    if (newStock < 0) {
-        notify("Stock cannot be negative!", "error");
-        return;
+    try {
+        await recordInventoryMovement(material, "OUT", data.amount, data.pic, data.reason, data.remark);
+        notify("Stock updated successfully.", "success");
+    } catch (error) {
+        notify(`Error: ${error.message || error}`, "error");
     }
-
-    const transactionSaved = await saveTransaction(materialCode, "OUT", data.amount, data.pic, data.reason, data.remark);
-    if (!transactionSaved) return;
-
-    const now = new Date();
-    const actor = getActorInfo();
-    update(ref(db, "materials/" + id), {
-        stock: newStock,
-        updatedAt: now.toLocaleString(),
-        updatedAtISO: now.toISOString(),
-        updatedByUid: actor.uid,
-        updatedByEmail: actor.email
-    })
-        .then(() => {
-            notify("Stock updated successfully.", "success");
-        })
-        .catch((error) => {
-            notify(`Error: ${error.message}`, "error");
-        });
 };
 
 window.searchMaterial = function () {
@@ -4429,9 +4519,7 @@ window.resetPreferences = function () {
 function setupSidebarNavigation() {
     const sidebar = document.getElementById("sidebar");
     const links = document.querySelectorAll(".sidebar-link");
-    const sections = ["overviewSection", "materialsSection", "transactionsSection", "scannerSection", "chartsSection", "settingsSection", "reportsSection"]
-        .map((id) => document.getElementById(id))
-        .filter(Boolean);
+    const sections = Array.from(document.querySelectorAll("main section[id]")).filter((section) => !section.hidden);
 
     links.forEach((link) => {
         link.addEventListener("click", () => {

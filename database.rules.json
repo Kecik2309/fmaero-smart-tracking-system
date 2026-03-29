@@ -6,7 +6,7 @@
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'admin' && root.child('users/' + auth.uid + '/status').val() === 'active'",
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'admin')",
-        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || (!data.exists() && auth.uid === $uid && newData.child('email').val() === auth.token.email && newData.child('status').val() === 'active'))",
+        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || (!data.exists() && auth.uid === $uid && newData.child('email').val() === auth.token.email && newData.child('status').val() === 'active' && newData.child('role').val() !== 'admin' && newData.child('migratedFrom').isString() && root.child('users/' + newData.child('migratedFrom').val() + '/email').val() === auth.token.email && root.child('users/' + newData.child('migratedFrom').val() + '/role').val() === newData.child('role').val()))",
         "uid": {
           ".validate": "newData.val() === $uid"
         },
@@ -42,7 +42,22 @@
     "rfidScans": {
       ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active'",
       "latest": {
-        ".write": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'storekeeper')"
+        ".write": true,
+        "tag": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64"
+        },
+        "action": {
+          ".validate": "newData.val() === 'IN' || newData.val() === 'OUT'"
+        },
+        "source": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+        },
+        "scannedAt": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     }
   }
